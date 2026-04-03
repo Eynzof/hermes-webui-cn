@@ -8,6 +8,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from api.auth import check_auth
 from api.config import HOST, PORT, STATE_DIR, SESSION_DIR, DEFAULT_WORKSPACE
 from api.helpers import j
 from api.routes import handle_get, handle_post
@@ -34,6 +35,7 @@ class Handler(BaseHTTPRequestHandler):
         self._req_t0 = time.time()
         try:
             parsed = urlparse(self.path)
+            if not check_auth(self, parsed): return
             result = handle_get(self, parsed)
             if result is False:
                 return j(self, {'error': 'not found'}, status=404)
@@ -44,6 +46,7 @@ class Handler(BaseHTTPRequestHandler):
         self._req_t0 = time.time()
         try:
             parsed = urlparse(self.path)
+            if not check_auth(self, parsed): return
             result = handle_post(self, parsed)
             if result is False:
                 return j(self, {'error': 'not found'}, status=404)

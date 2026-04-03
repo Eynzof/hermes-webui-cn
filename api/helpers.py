@@ -25,6 +25,13 @@ def safe_resolve(root: Path, requested: str) -> Path:
     return resolved
 
 
+def _security_headers(handler):
+    """Add security headers to every response."""
+    handler.send_header('X-Content-Type-Options', 'nosniff')
+    handler.send_header('X-Frame-Options', 'DENY')
+    handler.send_header('Referrer-Policy', 'same-origin')
+
+
 def j(handler, payload, status=200):
     """Send a JSON response."""
     body = _json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
@@ -32,6 +39,7 @@ def j(handler, payload, status=200):
     handler.send_header('Content-Type', 'application/json; charset=utf-8')
     handler.send_header('Content-Length', str(len(body)))
     handler.send_header('Cache-Control', 'no-store')
+    _security_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -43,13 +51,19 @@ def t(handler, payload, status=200, content_type='text/plain; charset=utf-8'):
     handler.send_header('Content-Type', content_type)
     handler.send_header('Content-Length', str(len(body)))
     handler.send_header('Cache-Control', 'no-store')
+    _security_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
 
+MAX_BODY_BYTES = 20 * 1024 * 1024  # 20MB limit for non-upload POST bodies
+
+
 def read_body(handler):
-    """Read and JSON-parse a POST request body."""
+    """Read and JSON-parse a POST request body (capped at 20MB)."""
     length = int(handler.headers.get('Content-Length', 0))
+    if length > MAX_BODY_BYTES:
+        raise ValueError(f'Request body too large ({length} bytes, max {MAX_BODY_BYTES})')
     raw = handler.rfile.read(length) if length else b'{}'
     try:
         return _json.loads(raw)

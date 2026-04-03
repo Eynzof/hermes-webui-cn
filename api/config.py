@@ -595,6 +595,7 @@ _SETTINGS_DEFAULTS = {
     'default_model': DEFAULT_MODEL,
     'default_workspace': str(DEFAULT_WORKSPACE),
     'send_key': 'enter',  # 'enter' or 'ctrl+enter'
+    'password_hash': None,  # SHA-256 hash; None = auth disabled
 }
 
 def load_settings() -> dict:
@@ -616,7 +617,13 @@ _SETTINGS_ENUM_VALUES = {
 
 def save_settings(settings: dict) -> dict:
     """Save settings to disk. Returns the merged settings. Ignores unknown keys."""
+    import hashlib as _hl
     current = load_settings()
+    # Handle _set_password: hash and store as password_hash
+    raw_pw = settings.pop('_set_password', None)
+    if raw_pw and isinstance(raw_pw, str) and raw_pw.strip():
+        salt = str(STATE_DIR).encode()
+        current['password_hash'] = _hl.sha256(salt + raw_pw.strip().encode()).hexdigest()
     for k, v in settings.items():
         if k in _SETTINGS_ALLOWED_KEYS:
             # Validate enum-constrained keys

@@ -649,6 +649,15 @@ async function loadSettingsPanel(){
     // Send key preference
     const sendKeySel=$('settingsSendKey');
     if(sendKeySel) sendKeySel.value=settings.send_key||'enter';
+    // Password field: always blank (we don't send hash back)
+    const pwField=$('settingsPassword');
+    if(pwField) pwField.value='';
+    // Show sign-out button if auth is active
+    try{
+      const authStatus=await api('/api/auth/status');
+      const signOutBtn=$('btnSignOut');
+      if(signOutBtn) signOutBtn.style.display=authStatus.auth_enabled?'':'none';
+    }catch(e){}
   }catch(e){
     showToast('Failed to load settings: '+e.message);
   }
@@ -658,10 +667,28 @@ async function saveSettings(){
   const model=($('settingsModel')||{}).value;
   const workspace=($('settingsWorkspace')||{}).value;
   const sendKey=($('settingsSendKey')||{}).value;
+  const pw=($('settingsPassword')||{}).value;
   const body={};
   if(model) body.default_model=model;
   if(workspace) body.default_workspace=workspace;
   if(sendKey) body.send_key=sendKey;
+  // Password: if field has content, hash and save; if blank, clear auth
+  if(pw!==undefined&&pw!==null){
+    if(pw.trim()){
+      // Hash client-side using the same algo as server (SHA-256 with state-dir salt)
+      // We send the raw password to the server's dedicated endpoint instead
+      try{
+        await api('/api/settings',{method:'POST',body:JSON.stringify({...body,_set_password:pw.trim()})});
+        window._sendKey=sendKey||'enter';
+        showToast('Settings saved (password set — login now required)');
+        toggleSettings();
+        return;
+      }catch(e){showToast('Save failed: '+e.message);return;}
+    }else{
+      // Blank = clear password (disable auth)
+      body.password_hash=null;
+    }
+  }
   try{
     await api('/api/settings',{method:'POST',body:JSON.stringify(body)});
     window._sendKey=sendKey||'enter';
@@ -669,6 +696,15 @@ async function saveSettings(){
     toggleSettings();
   }catch(e){
     showToast('Save failed: '+e.message);
+  }
+}
+
+async function signOut(){
+  try{
+    await api('/api/auth/logout',{method:'POST',body:'{}'});
+    window.location.href='/login';
+  }catch(e){
+    showToast('Sign out failed: '+e.message);
   }
 }
 

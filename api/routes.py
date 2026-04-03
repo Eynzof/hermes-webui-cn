@@ -52,6 +52,58 @@ except ImportError:
     _permanent_approved = set()
 
 
+# ── Login page (self-contained, no external deps) ────────────────────────────
+_LOGIN_PAGE_HTML = '''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hermes — Sign in</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#e8e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#16213e;border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:36px 32px;
+  width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+.logo{width:48px;height:48px;border-radius:12px;background:linear-gradient(145deg,#e8a030,#e94560);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;
+  margin:0 auto 12px;box-shadow:0 2px 12px rgba(233,69,96,.3)}
+h1{font-size:18px;font-weight:600;margin-bottom:4px}
+.sub{font-size:12px;color:#8888aa;margin-bottom:24px}
+input{width:100%;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);color:#e8e8f0;font-size:14px;outline:none;margin-bottom:14px;
+  transition:border-color .15s}
+input:focus{border-color:rgba(124,185,255,.5);box-shadow:0 0 0 3px rgba(124,185,255,.1)}
+button{width:100%;padding:10px;border-radius:10px;border:none;background:rgba(124,185,255,.15);
+  border:1px solid rgba(124,185,255,.3);color:#7cb9ff;font-size:14px;font-weight:600;cursor:pointer;
+  transition:all .15s}
+button:hover{background:rgba(124,185,255,.25)}
+.err{color:#e94560;font-size:12px;margin-top:10px;display:none}
+</style></head><body>
+<div class="card">
+  <div class="logo">H</div>
+  <h1>Hermes</h1>
+  <p class="sub">Enter your password to continue</p>
+  <form onsubmit="return doLogin(event)">
+    <input type="password" id="pw" placeholder="Password" autofocus>
+    <button type="submit">Sign in</button>
+  </form>
+  <div class="err" id="err"></div>
+</div>
+<script>
+async function doLogin(e){
+  e.preventDefault();
+  const pw=document.getElementById('pw').value;
+  const err=document.getElementById('err');
+  err.style.display='none';
+  try{
+    const res=await fetch('/api/auth/login',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:pw}),credentials:'include'});
+    const data=await res.json();
+    if(res.ok&&data.ok){window.location.href='/';}
+    else{err.textContent=data.error||'Invalid password';err.style.display='block';}
+  }catch(ex){err.textContent='Connection failed';err.style.display='block';}
+}
+</script></body></html>'''
+
 # ── GET routes ────────────────────────────────────────────────────────────────
 
 def handle_get(handler, parsed):
@@ -60,6 +112,17 @@ def handle_get(handler, parsed):
     if parsed.path in ('/', '/index.html'):
         return t(handler, _INDEX_HTML_PATH.read_text(encoding='utf-8'),
                  content_type='text/html; charset=utf-8')
+
+    if parsed.path == '/login':
+        return t(handler, _LOGIN_PAGE_HTML, content_type='text/html; charset=utf-8')
+
+    if parsed.path == '/api/auth/status':
+        from api.auth import is_auth_enabled, parse_cookie, verify_session
+        logged_in = False
+        if is_auth_enabled():
+            cv = parse_cookie(handler)
+            logged_in = bool(cv and verify_session(cv))
+        return j(handler, {'auth_enabled': is_auth_enabled(), 'logged_in': logged_in})
 
     if parsed.path == '/favicon.ico':
         handler.send_response(204); handler.end_headers(); return True
@@ -399,6 +462,36 @@ def handle_post(handler, parsed):
     # ── Session import from JSON (POST) ──
     if parsed.path == '/api/session/import':
         return _handle_session_import(handler, body)
+
+    # ── Auth endpoints (POST) ──
+    if parsed.path == '/api/auth/login':
+        from api.auth import verify_password, create_session, set_auth_cookie, is_auth_enabled
+        if not is_auth_enabled():
+            return j(handler, {'ok': True, 'message': 'Auth not enabled'})
+        password = body.get('password', '')
+        if not verify_password(password):
+            return bad(handler, 'Invalid password', 401)
+        cookie_val = create_session()
+        handler.send_response(200)
+        handler.send_header('Content-Type', 'application/json')
+        handler.send_header('Cache-Control', 'no-store')
+        set_auth_cookie(handler, cookie_val)
+        handler.end_headers()
+        handler.wfile.write(json.dumps({'ok': True}).encode())
+        return True
+
+    if parsed.path == '/api/auth/logout':
+        from api.auth import clear_auth_cookie, invalidate_session, parse_cookie
+        cookie_val = parse_cookie(handler)
+        if cookie_val:
+            invalidate_session(cookie_val)
+        handler.send_response(200)
+        handler.send_header('Content-Type', 'application/json')
+        handler.send_header('Cache-Control', 'no-store')
+        clear_auth_cookie(handler)
+        handler.end_headers()
+        handler.wfile.write(json.dumps({'ok': True}).encode())
+        return True
 
     return False  # 404
 
