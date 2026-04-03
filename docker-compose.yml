@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  hermes-webui:
+    build: .
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Persist session data, settings, and projects across restarts
+      - hermes-data:/data
+      # Mount hermes-agent for full agent features (optional)
+      - ${HERMES_HOME:-${HOME}/.hermes}:/root/.hermes:ro
+    environment:
+      - HERMES_WEBUI_HOST=0.0.0.0
+      - HERMES_WEBUI_PORT=8787
+      - HERMES_WEBUI_STATE_DIR=/data
+      # Optional: set a password for remote access
+      # - HERMES_WEBUI_PASSWORD=your-secret-password
+    restart: unless-stopped
+
+volumes:
+  hermes-data:

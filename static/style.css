@@ -260,38 +260,87 @@
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:99px;transition:background .2s}
   ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
-  @media(max-width:900px){.rightpanel{display:none}}
+  /* ── Desktop: hide mobile-only elements ── */
+  .mobile-hamburger{display:none;}
+  .mobile-files-btn{display:none!important;}
+  .mobile-overlay{display:none;}
+  .mobile-bottom-nav{display:none;}
+
+  @media(max-width:900px){.rightpanel{display:none}.mobile-files-btn{display:inline-flex!important;}}
+
   @media(max-width:640px){
-    .sidebar{display:none}
-    /* Topbar: stack title + chips vertically, allow wrapping */
-    .topbar{padding:8px 12px;gap:6px;flex-wrap:wrap;}
-    .topbar-left{min-width:0;flex:1 1 100%;}
+    /* ── Sidebar: slide-in overlay instead of hidden ── */
+    .sidebar{position:fixed;left:-300px;top:0;bottom:0;width:280px;z-index:200;
+      transition:left .25s ease;box-shadow:4px 0 24px rgba(0,0,0,.4);}
+    .sidebar.mobile-open{left:0;}
+    .sidebar .resize-handle{display:none;}
+    /* Hamburger button */
+    .mobile-hamburger{display:flex;align-items:center;justify-content:center;
+      background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;
+      flex-shrink:0;-webkit-tap-highlight-color:transparent;}
+    .mobile-hamburger:hover{color:var(--text);}
+    /* Overlay backdrop */
+    .mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+      z-index:199;-webkit-tap-highlight-color:transparent;}
+    .mobile-overlay.visible{display:block;}
+    /* Files button in topbar */
+    .mobile-files-btn{display:inline-flex!important;}
+    /* Right panel: slide-over from right */
+    .rightpanel{display:flex!important;position:fixed;right:-320px;top:0;bottom:0;
+      width:300px;z-index:200;transition:right .25s ease;
+      box-shadow:-4px 0 24px rgba(0,0,0,.4);}
+    .rightpanel.mobile-open{right:0;}
+    .rightpanel .resize-handle{display:none;}
+    /* Bottom navigation bar */
+    .mobile-bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;
+      background:var(--sidebar);border-top:1px solid var(--border);
+      z-index:150;padding:4px 0 env(safe-area-inset-bottom,0);
+      justify-content:space-around;align-items:center;}
+    .mobile-nav-btn{display:flex;flex-direction:column;align-items:center;gap:2px;
+      background:none;border:none;color:var(--muted);font-size:9px;padding:6px 4px;
+      cursor:pointer;min-width:44px;min-height:44px;justify-content:center;
+      -webkit-tap-highlight-color:transparent;transition:color .15s;}
+    .mobile-nav-btn.active{color:var(--blue);}
+    .mobile-nav-btn:hover{color:var(--text);}
+    .mobile-nav-btn svg{flex-shrink:0;}
+    /* Hide sidebar nav tabs (replaced by bottom nav) */
+    .sidebar-nav{display:none;}
+    /* Hide sidebar bottom section on mobile (model select, workspace) */
+    .sidebar-bottom{display:none;}
+    /* Topbar adjustments */
+    .topbar{padding:8px 12px;gap:8px;}
     .topbar-title{font-size:14px;}
-    .topbar-meta{font-size:10px;}
-    .topbar-chips{flex-wrap:wrap;gap:4px;}
-    .topbar-chips .chip,.topbar-chips .ws-chip,.topbar-chips button{font-size:11px!important;padding:3px 8px!important;}
-    /* Messages area */
+    .topbar-meta{display:none;}
+    .topbar-chips{flex-wrap:nowrap;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .topbar-chips .chip,.topbar-chips .ws-chip,.topbar-chips button{font-size:11px!important;padding:3px 8px!important;white-space:nowrap;}
+    /* Messages area — account for bottom nav */
+    .messages{padding-bottom:60px;}
     .messages-inner{padding:12px 10px 20px;}
     .msg-body{padding-left:0;max-width:100%;}
     .msg-role{font-size:12px;}
-    /* Composer */
-    .composer-wrap{padding:8px 10px 12px!important;}
+    /* Composer — above bottom nav */
+    .composer-wrap{padding:8px 10px 12px!important;margin-bottom:56px;}
     .composer-box{border-radius:12px;}
     .composer-box textarea{font-size:16px;min-height:40px;}
     .send-btn{width:32px;height:32px;}
+    /* Touch targets — minimum 44px */
+    .icon-btn,.mic-btn{min-width:44px;min-height:44px;}
+    .session-item{min-height:44px;padding:10px 12px;}
     /* Empty state */
     .empty-state h2{font-size:18px;}
     .empty-state p{font-size:13px;}
     .suggestion-grid{max-width:100%!important;}
-    .suggestion-btn{font-size:12px;padding:8px 10px;}
+    .suggestion{font-size:12px;padding:10px 12px;}
     /* Approval card */
     .approval-card{padding:0 10px 8px;}
     .approval-btns{gap:6px;}
-    .approval-btn{padding:5px 10px;font-size:11px;}
+    .approval-btn{padding:8px 12px;font-size:12px;min-height:44px;}
     /* Tool cards */
     .tool-card{margin-left:0!important;font-size:12px;}
     /* Settings modal */
     .settings-panel{width:95vw;max-width:95vw;}
+    /* Login page responsive */
+    .card{width:90vw;max-width:320px;padding:28px 24px;}
   }
 
 /* ── Workspace dropdown (topbar) ── */
@@ -476,9 +525,14 @@
   transition:background .15s;
 }
 .resize-handle:hover,.resize-handle.dragging{background:rgba(124,185,255,.35);}
-.sidebar{position:relative;}
+/* Desktop-only: position:relative for sidebar/rightpanel resize handles.
+   Must be scoped to min-width:641px so it doesn't override the mobile
+   position:fixed slide-in overlay set in the max-width:640px @media block above. */
+@media(min-width:641px){
+  .sidebar{position:relative;}
+  .rightpanel{position:relative;}
+}
 .sidebar .resize-handle{right:-2px;}
-.rightpanel{position:relative;}
 .rightpanel .resize-handle{left:-2px;}
 /* Prevent text selection during drag */
 body.resizing{user-select:none;cursor:col-resize;}

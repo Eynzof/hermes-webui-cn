@@ -1,6 +1,6 @@
 # Hermes Web UI -- Forward Sprint Plan
 
-> Current state: v0.22 | 415 tests | Daily driver ready
+> Current state: v0.23 | 415 tests | Daily driver ready
 > This document plans the path from here to two targets:
 >
 > Target A: 1:1 feature parity with the Hermes CLI (everything you can do from the
@@ -421,16 +421,36 @@ UX was a low-effort high-impact polish opportunity that pairs naturally.
 
 ---
 
-## Sprint 21 -- Mobile Responsive (PLANNED)
+## Sprint 21 -- Mobile Responsive + Docker (COMPLETED)
 
-**Theme:** A genuinely good mobile experience, not just responsive CSS.
+**Theme:** Mobile experience + containerized deployment.
+
+**Why now:** Issue #21 (mobile) was the most-requested UX gap. Issue #7 (Docker)
+enables deployment beyond localhost. Both were achievable without new dependencies.
+
+### Track A: Bugs (from review)
+- **CSS cascade broke mobile slide-in.** `position:relative` after the media query
+  overrode `position:fixed`. Wrapped in `@media(min-width:641px)`.
+- **mobileSwitchPanel() always reopened sidebar.** Chat tab now closes it.
+- **Dockerfile missing pip install.** Container failed on startup.
+- **No .dockerignore.** `.git`, `tests/`, `.env*` leaked into images.
+- **docker-compose tilde expansion.** `~` doesn't expand in Compose defaults.
 
 ### Track B: Features
-- **Collapsible sidebar.** Hamburger menu replaces the always-visible sidebar.
-- **Touch-friendly session list.** Tap to navigate, swipe gestures.
-- **Right panel as tab.** Files panel hidden by default, accessible via tab.
-- **Composer focus behavior.** Expands on focus, keyboard-aware.
-- Consider a separate mobile-optimized layout rather than just media queries.
+- **Hamburger sidebar.** Slide-in overlay on mobile, tap outside to close.
+- **Bottom navigation bar.** 5-tab iOS-style bar replaces sidebar tabs.
+- **Files slide-over.** Right panel opens as slide-over from right edge.
+- **Touch targets.** Minimum 44px on all interactive elements.
+- **Docker support.** Dockerfile, docker-compose.yml, .dockerignore.
+
+### Track C: Architecture
+- Mobile nav functions in `boot.js`. Session click auto-closes sidebar.
+- 69 new CSS lines scoped to `@media(max-width:640px)`.
+- Desktop layout untouched — all mobile elements `display:none` by default.
+
+**Tests:** 0 new (CSS/DOM changes). Total: 415.
+**Hermes CLI parity impact:** Low
+**Claude parity impact:** High (Claude has mobile layout)
 
 ---
 
@@ -540,5 +560,5 @@ UX was a low-effort high-impact polish opportunity that pairs naturally.
 ---
 
 *Last updated: April 3, 2026*
-*Current version: v0.22 | 415 tests*
-*Next sprint: Sprint 21 (Mobile Responsive)*
+*Current version: v0.23 | 415 tests*
+*Next sprint: Sprint 22 (Multi-Profile Support)*

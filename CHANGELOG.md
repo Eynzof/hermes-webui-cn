@@ -5,6 +5,38 @@
 
 ---
 
+## [v0.23] Sprint 21 -- Mobile Responsive + Docker
+*April 3, 2026 | 415 tests*
+
+### Features
+- **Mobile responsive layout (Issue #21).** Full mobile experience with
+  hamburger sidebar (slide-in overlay), bottom navigation bar (5-tab iOS
+  pattern), and files slide-over panel. Touch targets minimum 44px. Composer
+  positioned above bottom nav. Session clicks auto-close sidebar. Desktop
+  layout completely unchanged — all mobile elements hidden via `@media`.
+- **Docker support (Issue #7).** Dockerfile (`python:3.12-slim`), docker-compose.yml
+  with named volume for state persistence, optional `~/.hermes` mount for
+  agent features. Binds to `127.0.0.1` by default for security.
+
+### Bug Fixes (from review)
+- **CSS cascade broke mobile slide-in.** `position:relative` rules after the
+  media query overrode `position:fixed` on mobile. Wrapped in `@media(min-width:641px)`.
+- **mobileSwitchPanel() always reopened sidebar.** Chat tab now closes sidebar
+  instead of reopening it over the main chat area.
+- **Dockerfile missing pip install.** Added `pip install -r requirements.txt`.
+- **No .dockerignore.** Added exclusions for `.git`, `tests/`, `.env*`.
+- **docker-compose tilde expansion.** Changed `~/.hermes` default to
+  `${HOME}/.hermes` (Docker Compose doesn't shell-expand `~`).
+
+### Architecture
+- Mobile navigation functions in `boot.js`: `toggleMobileSidebar()`,
+  `closeMobileSidebar()`, `toggleMobileFiles()`, `mobileSwitchPanel()`.
+- `sessions.js`: `closeMobileSidebar()` called after session click.
+- 69 new CSS lines in `@media(max-width:640px)` block.
+- New files: `Dockerfile`, `docker-compose.yml`, `.dockerignore`.
+
+---
+
 ## [v0.22] Sprint 20 -- Voice Input + Send Button Polish
 *April 3, 2026 | 415 tests*
 
@@ -716,4 +748,4 @@ Three-panel layout: sessions sidebar, chat area, workspace panel.
 
 ---
 
-*Last updated: v0.22, April 3, 2026 | Tests: 415*
+*Last updated: v0.23, April 3, 2026 | Tests: 415*

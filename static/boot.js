@@ -8,6 +8,48 @@ async function cancelStream(){
   }catch(e){setStatus('Cancel failed: '+e.message);}
 }
 
+// ── Mobile navigation ──────────────────────────────────────────────────────
+function toggleMobileSidebar(){
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=$('mobileOverlay');
+  if(!sidebar)return;
+  const isOpen=sidebar.classList.contains('mobile-open');
+  if(isOpen){closeMobileSidebar();}
+  else{sidebar.classList.add('mobile-open');if(overlay)overlay.classList.add('visible');}
+}
+function closeMobileSidebar(){
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=$('mobileOverlay');
+  if(sidebar)sidebar.classList.remove('mobile-open');
+  if(overlay)overlay.classList.remove('visible');
+}
+function toggleMobileFiles(){
+  const panel=document.querySelector('.rightpanel');
+  if(!panel)return;
+  panel.classList.toggle('mobile-open');
+}
+function mobileSwitchPanel(name){
+  // Switch the panel content view
+  switchPanel(name);
+  // For non-chat panels (tasks, skills, memory, spaces), open the sidebar
+  // so the panel is visible. For 'chat', the content is in the main area —
+  // just close the sidebar so the chat view is unobstructed.
+  if(name==='chat'){
+    closeMobileSidebar();
+  } else {
+    const sidebar=document.querySelector('.sidebar');
+    const overlay=$('mobileOverlay');
+    if(sidebar){
+      sidebar.classList.add('mobile-open');
+      if(overlay)overlay.classList.add('visible');
+    }
+  }
+  // Update bottom nav active state
+  document.querySelectorAll('.mobile-nav-btn').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.panel===name);
+  });
+}
+
 $('btnSend').onclick=()=>{if(window._micActive)_stopMic();send();};
 $('btnAttach').onclick=()=>$('fileInput').click();
 

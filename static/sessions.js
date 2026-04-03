@@ -346,6 +346,7 @@ function renderSessionListFromCache(){
         _clickTimer=null;
         if(_renamingSid) return;
         await loadSession(s.session_id);renderSessionListFromCache();
+        if(typeof closeMobileSidebar==='function')closeMobileSidebar();
       }, 220);
     };
     el.ondblclick=async(e)=>{
