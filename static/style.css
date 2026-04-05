@@ -145,6 +145,13 @@
   .reconnect-banner.visible{display:flex;}
   .reconnect-btn{padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:rgba(201,168,76,0.15);border:1px solid rgba(201,168,76,0.4);color:var(--gold);cursor:pointer;}
   .reconnect-btn:hover{background:rgba(201,168,76,0.25);}
+  /* ── Update banner ── */
+  .update-banner{display:none;background:var(--surface);border:1px solid rgba(124,185,255,0.4);border-radius:10px;padding:10px 16px;margin:10px auto;max-width:780px;font-size:13px;color:var(--blue);align-items:center;justify-content:space-between;gap:12px;}
+  .update-banner.visible{display:flex;}
+  .update-btn{padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:rgba(124,185,255,0.1);border:1px solid rgba(124,185,255,0.3);color:var(--blue);cursor:pointer;transition:background .15s;}
+  .update-btn:hover{background:rgba(124,185,255,0.2);}
+  .update-primary{background:rgba(124,185,255,0.2);border-color:rgba(124,185,255,0.5);}
+  .update-btn:disabled{opacity:0.5;cursor:not-allowed;}
   /* ── Approval card ── */
   .approval-card{display:none;max-width:780px;margin:0 auto 0;padding:0 20px 12px;}
   .approval-card.visible{display:block;}

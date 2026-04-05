@@ -227,6 +227,22 @@ def handle_get(handler, parsed) -> bool:
         info = git_info_for_workspace(Path(s.workspace))
         return j(handler, {'git': info})
 
+    if parsed.path == '/api/updates/check':
+        settings = load_settings()
+        if not settings.get('check_for_updates', True):
+            return j(handler, {'disabled': True})
+        qs = parse_qs(parsed.query)
+        force = qs.get('force', ['0'])[0] == '1'
+        # ?simulate=1 returns fake behind counts for UI testing (localhost only)
+        if qs.get('simulate', ['0'])[0] == '1' and handler.client_address[0] == '127.0.0.1':
+            return j(handler, {
+                'webui': {'name': 'webui', 'behind': 3, 'current_sha': 'abc1234', 'latest_sha': 'def5678', 'branch': 'master'},
+                'agent': {'name': 'agent', 'behind': 1, 'current_sha': 'aaa0001', 'latest_sha': 'bbb0002', 'branch': 'master'},
+                'checked_at': 0,
+            })
+        from api.updates import check_for_updates
+        return j(handler, check_for_updates(force=force))
+
     if parsed.path == '/api/chat/stream/status':
         stream_id = parse_qs(parsed.query).get('stream_id', [''])[0]
         return j(handler, {'active': stream_id in STREAMS, 'stream_id': stream_id})
@@ -599,6 +615,14 @@ def handle_post(handler, parsed) -> bool:
     # ── Session import from JSON (POST) ──
     if parsed.path == '/api/session/import':
         return _handle_session_import(handler, body)
+
+    # ── Self-update (POST) ──
+    if parsed.path == '/api/updates/apply':
+        target = body.get('target', '')
+        if target not in ('webui', 'agent'):
+            return bad(handler, 'target must be "webui" or "agent"')
+        from api.updates import apply_update
+        return j(handler, apply_update(target))
 
     # ── CLI session import (POST) ──
     if parsed.path == '/api/session/import_cli':

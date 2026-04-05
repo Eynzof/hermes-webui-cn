@@ -5,6 +5,38 @@
 
 ---
 
+## [v0.36] Self-Update Checker with One-Click Update
+*April 5, 2026 | 433 tests*
+
+### Features
+- **Update checker.** Non-blocking background check on boot detects when the
+  WebUI or hermes-agent git repos are behind upstream. Blue banner shows
+  "WebUI: N updates, Agent: N updates available" with Update Now / Later.
+- **One-click update.** "Update Now" runs `git stash && git pull --ff-only &&
+  git stash pop` on each behind repo, then reloads the page. Concurrent update
+  attempts blocked via lock. Dirty working trees safely stashed and restored.
+- **Settings toggle.** "Check for updates" checkbox in Settings panel. Persisted
+  server-side. Disabled = no background fetch, no banner.
+- **30-minute cache.** Git fetch runs at most twice per hour regardless of tab
+  count. Results cached server-side with TTL.
+- **Session-scoped dismissal.** "Later" dismisses banner for the current tab
+  session (sessionStorage). New tabs get a fresh check.
+- **Test mode.** `?test_updates=1` URL param shows the banner with fake data
+  (localhost only) for UI testing without needing to actually be behind.
+
+### Architecture
+- New `api/updates.py`: `check_for_updates()`, `apply_update()`. Thread-safe
+  caching with `_cache_lock`. Concurrent apply blocked with `_apply_lock`.
+  Default branch auto-detected (master/main).
+- `api/routes.py`: `GET /api/updates/check`, `POST /api/updates/apply`.
+  Simulate endpoint gated to 127.0.0.1.
+- `static/ui.js`: `_showUpdateBanner()`, `dismissUpdate()`, `applyUpdates()`.
+- `static/boot.js`: fire-and-forget check on boot (does not block UI).
+- `api/config.py`: `check_for_updates` in settings defaults + bool keys.
+- Docker safe: all git ops gated by `.git` directory existence check.
+
+---
+
 ## [v0.35.1] Model dropdown fixes
 *April 5, 2026 | 433 tests*
 
@@ -1236,4 +1268,4 @@ Three-panel layout: sessions sidebar, chat area, workspace panel.
 
 ---
 
-*Last updated: v0.34, April 5, 2026 | Tests: 433*
+*Last updated: v0.36, April 5, 2026 | Tests: 433*

@@ -995,21 +995,6 @@ async function loadSettingsPanel(){
       modelSel.value=settings.default_model||'';
       modelSel.addEventListener('change',_markSettingsDirty,{once:false});
     }
-    // Populate workspace dropdown from /api/workspaces
-    const wsSel=$('settingsWorkspace');
-    if(wsSel){
-      wsSel.innerHTML='';
-      try{
-        const wsData=await api('/api/workspaces');
-        for(const w of (wsData.workspaces||[])){
-          const opt=document.createElement('option');
-          opt.value=w.path;opt.textContent=w.name||w.path;
-          wsSel.appendChild(opt);
-        }
-      }catch(e){}
-      wsSel.value=settings.default_workspace||'';
-      wsSel.addEventListener('change',_markSettingsDirty,{once:false});
-    }
     // Send key preference
     const sendKeySel=$('settingsSendKey');
     if(sendKeySel){sendKeySel.value=settings.send_key||'enter';sendKeySel.addEventListener('change',_markSettingsDirty,{once:false});}
@@ -1022,6 +1007,8 @@ async function loadSettingsPanel(){
     if(showCliCb){showCliCb.checked=!!settings.show_cli_sessions;showCliCb.addEventListener('change',_markSettingsDirty,{once:false});}
     const syncCb=$('settingsSyncInsights');
     if(syncCb){syncCb.checked=!!settings.sync_to_insights;syncCb.addEventListener('change',_markSettingsDirty,{once:false});}
+    const updateCb=$('settingsCheckUpdates');
+    if(updateCb){updateCb.checked=settings.check_for_updates!==false;updateCb.addEventListener('change',_markSettingsDirty,{once:false});}
     // Password field: always blank (we don't send hash back)
     const pwField=$('settingsPassword');
     if(pwField){pwField.value='';pwField.addEventListener('input',_markSettingsDirty,{once:false});}
@@ -1041,7 +1028,6 @@ async function loadSettingsPanel(){
 
 async function saveSettings(andClose){
   const model=($('settingsModel')||{}).value;
-  const workspace=($('settingsWorkspace')||{}).value;
   const sendKey=($('settingsSendKey')||{}).value;
   const showTokenUsage=!!($('settingsShowTokenUsage')||{}).checked;
   const showCliSessions=!!($('settingsShowCliSessions')||{}).checked;
@@ -1049,12 +1035,13 @@ async function saveSettings(andClose){
   const theme=($('settingsTheme')||{}).value||'dark';
   const body={};
   if(model) body.default_model=model;
-  if(workspace) body.default_workspace=workspace;
+
   if(sendKey) body.send_key=sendKey;
   body.theme=theme;
   body.show_token_usage=showTokenUsage;
   body.show_cli_sessions=showCliSessions;
   body.sync_to_insights=!!($('settingsSyncInsights')||{}).checked;
+  body.check_for_updates=!!($('settingsCheckUpdates')||{}).checked;
   // Password: only act if the field has content; blank = leave auth unchanged
   if(pw && pw.trim()){
     try{

@@ -334,6 +334,47 @@ async function refreshSession() {
     showToast('Conversation refreshed');
   } catch(e) { setStatus('Refresh failed: ' + e.message); }
 }
+// ── Update banner ──
+function _showUpdateBanner(data){
+  const parts=[];
+  if(data.webui&&data.webui.behind>0) parts.push(`WebUI: ${data.webui.behind} update${data.webui.behind>1?'s':''}`);
+  if(data.agent&&data.agent.behind>0) parts.push(`Agent: ${data.agent.behind} update${data.agent.behind>1?'s':''}`);
+  if(!parts.length)return;
+  const msg=$('updateMsg');
+  if(msg) msg.textContent='\u2B06 '+parts.join(', ')+' available';
+  const banner=$('updateBanner');
+  if(banner) banner.classList.add('visible');
+  window._updateData=data;
+}
+function dismissUpdate(){
+  const b=$('updateBanner');if(b)b.classList.remove('visible');
+  sessionStorage.setItem('hermes-update-dismissed','1');
+}
+async function applyUpdates(){
+  const btn=$('btnApplyUpdate');
+  if(btn){btn.disabled=true;btn.textContent='Updating\u2026';}
+  const targets=[];
+  if(window._updateData?.webui?.behind>0) targets.push('webui');
+  if(window._updateData?.agent?.behind>0) targets.push('agent');
+  try{
+    for(const target of targets){
+      const res=await api('/api/updates/apply',{method:'POST',body:JSON.stringify({target})});
+      if(!res.ok){
+        showToast('Update failed ('+target+'): '+(res.message||'unknown error'));
+        if(btn){btn.disabled=false;btn.textContent='Update Now';}
+        return;
+      }
+    }
+    showToast('Updated! Reloading\u2026');
+    sessionStorage.removeItem('hermes-update-checked');
+    sessionStorage.removeItem('hermes-update-dismissed');
+    setTimeout(()=>location.reload(),1500);
+  }catch(e){
+    showToast('Update failed: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Update Now';}
+  }
+}
+
 async function checkInflightOnBoot(sid) {
   const raw = localStorage.getItem(INFLIGHT_KEY);
   if (!raw) return;

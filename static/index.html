@@ -14,7 +14,7 @@
 <body>
 <div class="layout">
   <aside class="sidebar">
-    <div class="sidebar-header"><div class="logo">H</div><div><h1 style="margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em">Hermes</h1><div style="font-size:10px;color:var(--muted);opacity:.8;margin-top:1px">v0.35.1</div></div></div>
+    <div class="sidebar-header"><div class="logo">H</div><div><h1 style="margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em">Hermes</h1><div style="font-size:10px;color:var(--muted);opacity:.8;margin-top:1px">v0.36</div></div></div>
     <div class="sidebar-nav">
       <button class="nav-tab active" data-panel="chat" data-label="Chat" onclick="switchPanel('chat')" title="Chat">&#128172;</button>
       <button class="nav-tab" data-panel="tasks" data-label="Tasks" onclick="switchPanel('tasks')" title="Tasks">&#128197;</button>
@@ -203,6 +203,13 @@
       <div class="messages-inner" id="msgInner"></div>
       <div id="liveToolCards" style="display:none;max-width:800px;margin:0 auto;width:100%;padding:0 24px;"></div>
     </div>
+    <div class="update-banner" id="updateBanner">
+      <span id="updateMsg"></span>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="update-btn" onclick="dismissUpdate()">Later</button>
+        <button class="update-btn update-primary" id="btnApplyUpdate" onclick="applyUpdates()">Update Now</button>
+      </div>
+    </div>
     <div class="reconnect-banner" id="reconnectBanner">
       <span id="reconnectMsg">&#9888; A response may have been in progress when you last left. Reload messages?</span>
       <div style="display:flex;gap:8px;flex-shrink:0">
@@ -320,10 +327,6 @@
         <select id="settingsModel" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px"></select>
       </div>
       <div class="settings-field">
-        <label for="settingsWorkspace">Default Workspace</label>
-        <select id="settingsWorkspace" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px"></select>
-      </div>
-      <div class="settings-field">
         <label for="settingsSendKey">Send Key</label>
         <select id="settingsSendKey" style="width:100%;padding:8px;background:var(--code-bg);color:var(--text);border:1px solid var(--border2);border-radius:6px">
           <option value="enter">Enter (Shift+Enter for newline)</option>
@@ -361,6 +364,13 @@
           Sync usage to /insights
         </label>
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Mirrors WebUI token usage to state.db so <code>hermes /insights</code> includes browser session data. Off by default.</div>
+      </div>
+      <div class="settings-field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="settingsCheckUpdates" style="width:15px;height:15px;accent-color:var(--accent)">
+          Check for updates
+        </label>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Show a banner when newer versions of the WebUI or Agent are available. Runs a background git fetch periodically.</div>
       </div>
       <div class="settings-field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:8px">
         <label for="settingsPassword">Access Password</label>
