@@ -107,6 +107,7 @@
     --surface:#0a0a0a;--topbar-bg:rgba(0,0,0,.98);--main-bg:rgba(0,0,0,0.5);
     --focus-ring:rgba(108,180,255,.3);--focus-glow:rgba(108,180,255,.06);
     --strong:#ffffff;--em:#c0c0d0;--code-text:#e8b86d;--code-inline-bg:rgba(255,255,255,.06);--pre-text:#d0d0d8;
+    --input-bg:rgba(255,255,255,.03);--hover-bg:rgba(255,255,255,.05);
   }
   body{background:var(--bg);color:var(--text);height:100vh;height:100dvh;overflow:hidden;display:flex;}
   .layout{display:flex;width:100%;height:100vh;height:100dvh;}

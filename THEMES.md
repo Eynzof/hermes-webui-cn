@@ -1,6 +1,6 @@
 # Hermes Web UI — Themes
 
-Hermes Web UI supports pluggable color themes. Six themes ship built-in, and
+Hermes Web UI supports pluggable color themes. Seven themes ship built-in, and
 you can create your own with pure CSS — no Python changes needed.
 
 ---
@@ -27,6 +27,7 @@ preview is instant — the UI updates as you click through options.
 | **Solarized Dark** | Ethan Schoonover's classic dark palette. Teal background, warm accents. |
 | **Monokai** | Warm dark theme inspired by the Monokai editor scheme. Green/pink accents. |
 | **Nord** | Arctic blue-gray palette from the Nord color system. Calm and minimal. |
+| **OLED** | True black (#000) backgrounds for OLED displays. Minimizes glow and burn-in risk. |
 | **Custom themes** | Any string accepted by `settings.json`, `POST /api/settings`, and `/theme` if added to the picker/command list. Pure CSS variables only. |
 
 ---
