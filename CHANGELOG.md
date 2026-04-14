@@ -1,5 +1,39 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.42] fix: session display + model UX polish (sprint 42)
+
+**Context indicator always shows latest usage** (PR #471, fixes #437)
+The context ring/indicator in the composer footer was reading token counts and cost
+from the stored session snapshot with `||` — meaning stale non-zero values from
+previous turns always won over a fresh `0` from the current turn. Replaced all six
+field merges with a `_pick(latest, stored, dflt)` helper that correctly prefers the
+latest usage when it's a real value (including `0`).
+
+**System prompt no longer leaks as gateway session title** (PR #472, fixes #441)
+Telegram, Discord, and CLI gateway sessions inject a system message before any user
+turn. When the session title is set from this message, the sidebar shows
+`[SYSTEM: The user has inv...` instead of a meaningful name. Added a guard in
+`_renderOneSession()`: if `cleanTitle` starts with `[SYSTEM:`, replace it with the
+platform display name (`Telegram session`, `Discord session`, etc.).
+
+**Thinking/reasoning panel persists across page reload** (PR #473, fixes #427)
+The full chain-of-thought from Claude, Gemini, and DeepSeek thinking models was lost
+after streaming completed and on every page reload. Two-part fix:
+- `api/streaming.py`: `on_reasoning()` now accumulates `_reasoning_text`; before the
+  session is serialised at stream end, `_reasoning_text` is injected into the last
+  assistant message so it's stored in the session JSON
+- `static/messages.js`: in the `done` SSE handler, `reasoningText` is also patched
+  onto the last assistant message as a belt-and-suspenders client-side fallback
+
+**Custom model ID input in model picker** (PR #474, fixes #444)
+Users who need a model not in the curated list (~30 models) can now type any model
+ID directly in the dropdown. A text input at the bottom of the model picker lets
+users enter any string (e.g. `openai/gpt-5.4`, `deepseek/deepseek-r2`, or any
+provider-prefixed ID) and press Enter or click + to use it immediately.
+i18n keys added to en, es, zh.
+
+- Total tests: TBD (was 1117)
+
 ## [v0.50.41] feat(ui): render MEDIA: images inline in web UI chat (fixes #450)
 
 When the agent outputs `MEDIA:<path>` tokens — screenshots from the browser tool,
