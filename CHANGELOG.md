@@ -1,5 +1,34 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.39] fix: orphan gateway sessions + first-password-enablement session continuity
+
+Two bug fixes:
+
+**PR #423 — Fix orphan gateway sessions in sidebar (@aronprins, fix by maintainer)**
+`gateway_watcher.py`'s `_get_agent_sessions_from_db()` was missing the
+`HAVING COUNT(m.id) > 0` clause that `get_cli_sessions()` already had. Sessions
+with no messages (e.g. created then abandoned before any turns) would appear in the
+sidebar via the SSE watcher stream even after the initial page load filtered them out.
+One-line SQL fix applied to both query paths.
+
+**PR #434 — First-password-enablement session continuity (@SaulgoodMan-C)**
+When a user enables a password for the first time via POST `/api/settings`,
+the current browser session was being terminated — requiring the user to log in
+again immediately after setting their password. Fix: the response now includes
+`auth_enabled`, `logged_in`, and `auth_just_enabled` fields, and issues a
+`hermes_session` cookie when auth is first enabled, so the browser remains logged in.
+Also: legacy `assistant_language` key is now dropped from settings on next save.
+New i18n keys for password replacement/keep-existing states (en, es, de, zh, zh-Hant).
+
+- `api/config.py`: `_SETTINGS_LEGACY_DROP_KEYS` removes `assistant_language` on load
+- `api/routes.py`: first-password-enable session continuity with `auth_just_enabled` flag
+- `static/panels.js`: `_setSettingsAuthButtonsVisible()` + `_applySavedSettingsUi()` helpers
+- `static/i18n.js`: password state i18n keys across 5 locales
+- `tests/test_sprint45.py`: 3 new integration tests (auth continuity + legacy key cleanup)
+
+- Total tests: 1078 (was 1075)
+
+
 ## [v0.50.38] feat: mobile nav cleanup, Prism syntax highlighting, zh-CN/zh-Hant i18n
 
 Three community contributions combined:

@@ -66,6 +66,7 @@ def _get_agent_sessions_from_db() -> list:
                 LEFT JOIN messages m ON m.session_id = s.id
                 WHERE s.source IS NOT NULL AND s.source != 'webui'
                 GROUP BY s.id
+                HAVING COUNT(m.id) > 0
                 ORDER BY COALESCE(MAX(m.timestamp), s.started_at) DESC
                 LIMIT 200
             """)
