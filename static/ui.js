@@ -465,15 +465,24 @@ function renderMd(raw){
     t=t.replace(/\*\*\*(.+?)\*\*\*/g,(_,x)=>`<strong><em>${esc(x)}</em></strong>`);
     t=t.replace(/\*\*(.+?)\*\*/g,(_,x)=>`<strong>${esc(x)}</strong>`);
     t=t.replace(/\*([^*\n]+)\*/g,(_,x)=>`<em>${esc(x)}</em>`);
+    // #487: Image pass — runs while code stash is active so ![x](url) inside
+    // backticks stays protected as a \x00C token and is never rendered as <img>.
+    // Must run before _code_stash restore and before _link_stash so the image
+    // is not consumed by the [label](url) link regex.
+    t=t.replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g,(_,alt,url)=>`<img src="${url.replace(/"/g,'%22')}" alt="${esc(alt)}" class="msg-media-img" loading="lazy" onclick="this.classList.toggle('msg-media-img--full')">`);
+    // Stash rendered <img> tags so autolink never matches URLs inside src=
+    const _img_stash=[];
+    t=t.replace(/(<img\b[^>]*>)/g,m=>{_img_stash.push(m);return `\x00G${_img_stash.length-1}\x00`;});
     t=t.replace(/\x00C(\d+)\x00/g,(_,i)=>_code_stash[+i]);
     // Stash [label](url) links before autolink so the URL in href= is not re-linked
     const _link_stash=[];
     t=t.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,(_,lb,u)=>{_link_stash.push(`<a href="${u.replace(/"/g,'%22')}" target="_blank" rel="noopener">${esc(lb)}</a>`);return `\x00L${_link_stash.length-1}\x00`;});
     t=t.replace(/(https?:\/\/[^\s<>"')\]]+)/g,(url)=>{const trail=url.match(/[.,;:!?)]$/)?url.slice(-1):'';const clean=trail?url.slice(0,-1):url;return `<a href="${clean}" target="_blank" rel="noopener">${esc(clean)}</a>${trail}`;});
     t=t.replace(/\x00L(\d+)\x00/g,(_,i)=>_link_stash[+i]);
+    t=t.replace(/\x00G(\d+)\x00/g,(_,i)=>_img_stash[+i]);
     // Escape any plain text that isn't already wrapped in a tag we produced
-    // by escaping bare < > that aren't part of our own tags
-    const SAFE_INLINE=/^<\/?(strong|em|code|a)([\s>]|$)/i;
+    // by escaping bare < > that are not part of our own tags
+    const SAFE_INLINE=/^<\/?(strong|em|code|a|img)([\s>]|$)/i;
     t=t.replace(/<\/?[a-z][^>]*>/gi,tag=>SAFE_INLINE.test(tag)?tag:esc(tag));
     return t;
   }
@@ -523,6 +532,10 @@ function renderMd(raw){
     const body=rows.slice(2).map(r=>`<tr>${parseRow(r)}</tr>`).join('');
     return `<table><thead>${header}</thead><tbody>${body}</tbody></table>`;
   });
+  // #487: Outer image pass — handles ![alt](url) in plain paragraphs (outside tables/lists).
+  // Runs AFTER the table pass (images in table cells are handled by inlineMd() above).
+  // Runs BEFORE the outer [label](url) link pass so the image is not consumed as a plain link.
+  s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g,(_,alt,url)=>`<img src="${url.replace(/"/g,'%22')}" alt="${esc(alt)}" class="msg-media-img" loading="lazy" onclick="this.classList.toggle('msg-media-img--full')">`);
   // Outer link pass for labeled links in plain paragraphs (outside table cells).
   // Runs AFTER the table pass so table cells are processed by inlineMd() only.
   // Stash existing <a> tags first to avoid re-linking already-linked URLs.
@@ -534,7 +547,7 @@ function renderMd(raw){
   // Our pipeline only emits: <strong>,<em>,<code>,<pre>,<h1-6>,<ul>,<ol>,<li>,
   // <table>,<thead>,<tbody>,<tr>,<th>,<td>,<hr>,<blockquote>,<p>,<br>,<a>,
   // <div class="..."> (mermaid/pre-header). Everything else is untrusted input.
-  const SAFE_TAGS=/^<\/?(strong|em|code|pre|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|hr|blockquote|p|br|a|div|span)([\s>]|$)/i;
+  const SAFE_TAGS=/^<\/?(strong|em|code|pre|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|hr|blockquote|p|br|a|img|div|span)([\s>]|$)/i;
   s=s.replace(/<\/?[a-z][^>]*>/gi,tag=>SAFE_TAGS.test(tag)?tag:esc(tag));
   // Autolink: convert plain URLs to clickable links.
   // Stash existing <a> tags first so we never re-link a URL already inside href="...".

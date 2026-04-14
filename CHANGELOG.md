@@ -1,5 +1,52 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.44] fix: code-in-table CSS sizing + markdown image rendering (#486, #487)
+
+**CSS: inline code inside table cells** (fixes #486)
+
+Inline `` `code` `` spans inside `<td>` and `<th>` cells were rendering too
+large relative to the cell height — the `.msg-body code` rule sets `12.5px`
+which sits awkward against the table's `12px` base font.
+
+Fix: added two targeted rules in `static/style.css`:
+
+    .msg-body td code,.msg-body th code { font-size:0.85em; padding:1px 4px; vertical-align:baseline; }
+    .preview-md td code,.preview-md th code { font-size:0.85em; padding:1px 4px; vertical-align:baseline; }
+
+Covers both the chat message surface (`.msg-body`) and the markdown preview
+panel (`.preview-md`).
+
+**JS renderer: `![alt](url)` image syntax** (fixes #487)
+
+Standard markdown image syntax was not handled by `renderMd()`. The `!` was
+left as a stray character and `[alt](url)` was consumed by the link pass,
+producing `! <a href="url">alt</a>` instead of an `<img>`.
+
+Fix: added an image pass to both `inlineMd()` (for images in table cells,
+list items, blockquotes, headings) and the outer `renderMd()` pipeline (for
+images in plain paragraphs):
+
+- Regex: `![alt](https?://url)` — only `http://` and `https://` URIs accepted;
+  `javascript:` and `data:` URIs cannot match.
+- Alt text passes through `esc()` — XSS-safe.
+- URL double-quotes percent-encoded to `%22` — attribute breakout prevented.
+- Reuses `.msg-media-img` class — same click-to-zoom and max-width styling as
+  agent-emitted `MEDIA:` images.
+- `img` added to `SAFE_TAGS` allowlist so the generated `<img>` is not escaped.
+- In `inlineMd()`: image pass runs while the `_code_stash` is still active,
+  so `![alt](url)` inside a backtick span stays protected and is never rendered
+  as an image. A new `_img_stash` (`\x00G`) protects rendered `<img>` tags
+  from the autolink pass touching `src=` values.
+
+**Tests**
+
+45 new tests in `tests/test_issue486_487.py`:
+- 13 CSS source checks and rendering tests for #486
+- 22 JS source checks and rendering tests for #487
+- 10 combination edge cases (code + image + link all in same table)
+
+- Total tests: 1195 (was 1150)
+
 ## [v0.50.43] fix: markdown link rendering + KaTeX CSP fonts
 
 **Markdown link rendering — `renderMd()` in `static/ui.js`** (PR #475, fixes #470)
