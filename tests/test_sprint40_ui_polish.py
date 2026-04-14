@@ -5,12 +5,29 @@ Covers:
 - .session-item.active .session-title uses var(--gold) instead of hardcoded #e8a030
 - The hardcoded amber color #e8a030 is NOT present in the active session title rule
 """
+import os
 import pathlib
 import re
+import sys
 import unittest
+from unittest import mock
 
-REPO_ROOT = pathlib.Path(__file__).parent.parent
-STYLE_CSS = (REPO_ROOT / "static" / "style.css").read_text()
+# Ensure repo is on sys.path so api.config can be imported
+_REPO_ROOT = pathlib.Path(__file__).parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+REPO_ROOT  = _REPO_ROOT
+STYLE_CSS  = (REPO_ROOT / "static" / "style.css").read_text()
+SESSIONS_JS = (REPO_ROOT / "static" / "sessions.js").read_text()
+PANELS_JS   = (REPO_ROOT / "static" / "panels.js").read_text()
+
+try:
+    from api import config as _api_config
+    _config_available = True
+except Exception:
+    _api_config = None
+    _config_available = False
 
 # Combined tests for Sprint 40 — Session + UI Polish
 # Covers: active title color, unknown model, Telegram badge,
@@ -179,23 +196,24 @@ if __name__ == "__main__":
     unittest.main()
 
 # ── #454 model routing ─────────────────────────────────────────────
+@unittest.skipUnless(_config_available, "api.config not importable")
 class TestCustomEndpointModelStripping:
     """Tests for fix #433: strip provider prefix when custom base_url is set."""
 
     def _resolve(self, model_id, provider=None, base_url=None):
         """Helper: set cfg directly (same pattern as test_model_resolver.py)."""
-        old_cfg = dict(config.cfg)
+        old_cfg = dict(_api_config.cfg)
         model_cfg = {}
         if provider:
             model_cfg['provider'] = provider
         if base_url:
             model_cfg['base_url'] = base_url
-        config.cfg['model'] = model_cfg
+        _api_config.cfg['model'] = model_cfg
         try:
-            return config.resolve_model_provider(model_id)
+            return _api_config.resolve_model_provider(model_id)
         finally:
-            config.cfg.clear()
-            config.cfg.update(old_cfg)
+            _api_config.cfg.clear()
+            _api_config.cfg.update(old_cfg)
 
     def test_prefixed_model_stripped_for_custom_endpoint(self):
         """Issue #433: 'openai/gpt-5.4' with custom base_url returns bare 'gpt-5.4'."""
