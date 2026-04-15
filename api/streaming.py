@@ -64,11 +64,37 @@ def _sanitize_messages_for_api(messages):
     The webui stores extra metadata on messages (attachments, timestamp, _ts)
     for display purposes. Some providers (e.g. Z.AI/GLM) reject unknown fields
     instead of ignoring them, causing HTTP 400 errors on subsequent messages.
+
+    Also strips orphaned tool-role messages whose tool_call_id cannot be linked
+    to a preceding assistant message with tool_calls. Strictly-conformant providers
+    (Mercury-2/Inception, newer OpenAI models) reject histories containing dangling
+    tool results with a 400 error: "Message has tool role, but there was no previous
+    assistant message with a tool call."
     """
+    # First pass: collect all tool_call_ids declared by assistant messages.
+    # Handles both OpenAI ('id') and Anthropic ('call_id') field names.
+    valid_tool_call_ids: set = set()
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get('role') == 'assistant':
+            for tc in msg.get('tool_calls') or []:
+                if isinstance(tc, dict):
+                    tid = tc.get('id') or tc.get('call_id') or ''
+                    if tid:
+                        valid_tool_call_ids.add(tid)
+
+    # Second pass: build the sanitized list, dropping orphaned tool messages.
     clean = []
     for msg in messages:
         if not isinstance(msg, dict):
             continue
+        role = msg.get('role')
+        if role == 'tool':
+            tid = msg.get('tool_call_id') or ''
+            if not tid or tid not in valid_tool_call_ids:
+                # Orphaned tool result — skip to avoid 400 from strict providers.
+                continue
         sanitized = {k: v for k, v in msg.items() if k in _API_SAFE_MSG_KEYS}
         if sanitized.get('role'):
             clean.append(sanitized)
