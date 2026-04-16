@@ -1,5 +1,13 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.57] — 2026-04-15
+
+### Added
+- **Auto-generated session titles** — after the first exchange, a background thread generates a concise title from the first user message and assistant reply, replacing the default first-message substring. Updates live in the UI via a new `title` SSE event. Manual renames are preserved; generation only runs once per session. Includes MiniMax token budget handling and a local heuristic fallback. (Fixes #495, PR #535 by @franksong2702)
+
+### Changed
+- **SSE stream termination** — streams now end with `stream_end` instead of `done` so the background title generation thread has time to emit the title update before the client disconnects.
+
 ## [v0.50.55] — 2026-04-15
 
 ### Fixed
