@@ -761,6 +761,99 @@ def get_effective_default_model(config_data: dict | None = None) -> str:
     return default_model
 
 
+# ── Reasoning config (CLI parity for /reasoning) ─────────────────────────────
+# Mirrors hermes_constants.parse_reasoning_effort so WebUI can validate without
+# importing from the agent tree (which may not be installed).  Any drift here
+# will show up in the shared test suite since both sides accept the same set.
+VALID_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
+
+
+def parse_reasoning_effort(effort):
+    """Parse an effort level into the dict the agent expects.
+
+    Returns None when *effort* is empty or unrecognised (caller interprets as
+    "use default"), ``{"enabled": False}`` for ``"none"``, and
+    ``{"enabled": True, "effort": <level>}`` for any of
+    ``VALID_REASONING_EFFORTS``.
+    """
+    if not effort or not str(effort).strip():
+        return None
+    eff = str(effort).strip().lower()
+    if eff == "none":
+        return {"enabled": False}
+    if eff in VALID_REASONING_EFFORTS:
+        return {"enabled": True, "effort": eff}
+    return None
+
+
+def get_reasoning_status() -> dict:
+    """Return current reasoning configuration from the active profile's
+    config.yaml — the same source of truth the CLI reads from.
+
+    Keys:
+      - show_reasoning: bool — from ``display.show_reasoning`` (default True)
+      - reasoning_effort: str — from ``agent.reasoning_effort`` ('' = default)
+    """
+    config_data = _load_yaml_config_file(_get_config_path())
+    display_cfg = config_data.get("display") or {}
+    agent_cfg = config_data.get("agent") or {}
+    show_raw = display_cfg.get("show_reasoning") if isinstance(display_cfg, dict) else None
+    effort_raw = agent_cfg.get("reasoning_effort") if isinstance(agent_cfg, dict) else None
+    return {
+        # Match CLI default (True if unset in config.yaml)
+        "show_reasoning": bool(show_raw) if isinstance(show_raw, bool) else True,
+        "reasoning_effort": str(effort_raw or "").strip().lower(),
+    }
+
+
+def set_reasoning_display(show: bool) -> dict:
+    """Persist ``display.show_reasoning`` to the active profile's config.yaml.
+
+    Mirrors CLI ``/reasoning show|hide``: writes the same key that the CLI
+    writes, so the preference is shared across the WebUI and the terminal
+    REPL for the same profile.
+    """
+    config_path = _get_config_path()
+    with _cfg_lock:
+        config_data = _load_yaml_config_file(config_path)
+        display_cfg = config_data.get("display")
+        if not isinstance(display_cfg, dict):
+            display_cfg = {}
+        display_cfg["show_reasoning"] = bool(show)
+        config_data["display"] = display_cfg
+        _save_yaml_config_file(config_path, config_data)
+    reload_config()
+    return get_reasoning_status()
+
+
+def set_reasoning_effort(effort: str) -> dict:
+    """Persist ``agent.reasoning_effort`` to the active profile's config.yaml.
+
+    Mirrors CLI ``/reasoning <level>``: same key, same valid values
+    (``none`` | ``minimal`` | ``low`` | ``medium`` | ``high`` | ``xhigh``).
+    Raises ``ValueError`` on an unrecognised level so callers can return 400.
+    """
+    raw = str(effort or "").strip().lower()
+    if not raw:
+        raise ValueError("effort is required")
+    if raw != "none" and raw not in VALID_REASONING_EFFORTS:
+        raise ValueError(
+            f"Unknown reasoning effort '{effort}'. "
+            f"Valid: none, {', '.join(VALID_REASONING_EFFORTS)}."
+        )
+    config_path = _get_config_path()
+    with _cfg_lock:
+        config_data = _load_yaml_config_file(config_path)
+        agent_cfg = config_data.get("agent")
+        if not isinstance(agent_cfg, dict):
+            agent_cfg = {}
+        agent_cfg["reasoning_effort"] = raw
+        config_data["agent"] = agent_cfg
+        _save_yaml_config_file(config_path, config_data)
+    reload_config()
+    return get_reasoning_status()
+
+
 def set_hermes_default_model(model_id: str) -> dict:
     """Persist the Hermes default model in config.yaml and reload runtime config."""
     selected_model = str(model_id or "").strip()
@@ -1381,6 +1474,7 @@ _SETTINGS_DEFAULTS = {
     ),  # display name for the assistant
     "sound_enabled": False,  # play notification sound when assistant finishes
     "notifications_enabled": False,  # browser notification when tab is in background
+    "show_thinking": True,  # show/hide thinking/reasoning blocks in chat view
     "sidebar_density": "compact",  # compact | detailed
     "password_hash": None,  # PBKDF2-HMAC-SHA256 hash; None = auth disabled
 }
@@ -1491,6 +1585,7 @@ _SETTINGS_BOOL_KEYS = {
     "check_for_updates",
     "sound_enabled",
     "notifications_enabled",
+    "show_thinking",
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
 _SETTINGS_LANG_RE = __import__("re").compile(r"^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$")

@@ -20,12 +20,12 @@ const COMMANDS=[
   {name:'undo',      desc:t('cmd_undo'),     fn:cmdUndo},
   {name:'status',    desc:t('cmd_status'),   fn:cmdStatus},
   {name:'voice',     desc:t('cmd_voice'),    fn:cmdVoice},
+  {name:'reasoning', desc:t('cmd_reasoning'), fn:cmdReasoning, arg:'show|hide|none|minimal|low|medium|high|xhigh', subArgs:['show','hide','none','minimal','low','medium','high','xhigh']},
 ];
 
 const SLASH_SUBARG_SOURCES={
   model:{desc:t('cmd_model'), subArgs:'models'},
   personality:{desc:t('cmd_personality'), subArgs:'personalities'},
-  reasoning:{desc:'Set reasoning effort', subArgs:['low','medium','high']},
 };
 
 function parseCommand(text){
@@ -41,8 +41,10 @@ function executeCommand(text){
   if(!parsed)return false;
   const cmd=COMMANDS.find(c=>c.name===parsed.name);
   if(!cmd)return false;
-  cmd.fn(parsed.args);
-  return true;
+  // A handler may return `false` to opt out of interception — e.g. /reasoning
+  // with an effort level falls through so the agent's own handler sees it,
+  // preserving the pre-existing pass-through behaviour for that subcommand.
+  return cmd.fn(parsed.args) !== false;
 }
 
 function getMatchingCommands(prefix){
@@ -571,6 +573,56 @@ async function cmdStatus(){
     S.messages.push({role:'assistant',content:[`**${t('status_heading')}**`,'',`**${t('status_session_id')}:** \`${r.session_id}\``,`**${t('status_title')}:** ${r.title||t('untitled')}`,`**${t('status_model')}:** ${r.model||t('usage_default_model')}`,`**${t('status_workspace')}:** ${r.workspace}`,`**${t('status_personality')}:** ${r.personality||t('usage_personality_none')}`,`**${t('status_messages')}:** ${r.message_count}`,`**${t('status_agent_running')}:** ${r.agent_running?t('status_yes'):t('status_no')}`,].join('\n')});
     renderMessages();
   }catch(e){showToast(t('status_load_failed')+e.message);}
+}
+function cmdReasoning(args){
+  const arg=(args||'').trim().toLowerCase();
+  const BRAIN='\uD83E\uDDE0';
+  // Matches hermes_constants.VALID_REASONING_EFFORTS + 'none' (CLI parity).
+  const EFFORTS=['none','minimal','low','medium','high','xhigh'];
+  // Shared status renderer used by the no-args branch and as a fallback.
+  function _fmtStatus(st){
+    const vis=(st && st.show_reasoning===false)?'off':'on';
+    const eff=(st && st.reasoning_effort)||'default';
+    return BRAIN+' Reasoning effort: '+eff+' \u00B7 display: '+vis
+      +'  |  /reasoning show|hide|none|minimal|low|medium|high|xhigh';
+  }
+  if(!arg){
+    // Status — read from the same config.yaml keys the CLI uses.
+    api('/api/reasoning').then(function(st){showToast(_fmtStatus(st));})
+      .catch(function(){showToast(BRAIN+' /reasoning — status unavailable');});
+    return true;
+  }
+  if(arg==='show'||arg==='on'||arg==='hide'||arg==='off'){
+    const on=(arg==='show'||arg==='on');
+    // Update the UI render gate immediately for responsiveness.
+    window._showThinking=on;
+    if(typeof renderMessages==='function') renderMessages();
+    // Persist via /api/reasoning → config.yaml display.show_reasoning
+    // (CLI reads the same key).  Also mirror into WebUI settings.json
+    // show_thinking so boot.js picks it up on reload without hitting
+    // /api/reasoning on every page load.
+    api('/api/reasoning',{method:'POST',body:JSON.stringify({display:arg})}).catch(function(){});
+    api('/api/settings',{method:'POST',body:JSON.stringify({show_thinking:on})}).catch(function(){});
+    showToast(BRAIN+' Thinking blocks: '+(on?'on':'off')+' (saved)');
+    return true;
+  }
+  if(EFFORTS.includes(arg)){
+    // Persist via /api/reasoning → config.yaml agent.reasoning_effort.
+    // Takes effect on the NEXT session/turn (agent re-reads config at
+    // construction time), matching CLI semantics where `/reasoning high`
+    // also forces an agent re-init.
+    api('/api/reasoning',{method:'POST',body:JSON.stringify({effort:arg})})
+      .then(function(st){
+        const eff=(st && st.reasoning_effort)||arg;
+        showToast(BRAIN+' Reasoning effort set to '+eff+' (saved; applies to next turn)');
+      })
+      .catch(function(e){
+        showToast(BRAIN+' Failed to set effort: '+(e && e.message ? e.message : arg));
+      });
+    return true;
+  }
+  showToast('Unknown argument: '+arg+' \u2014 use show|hide|'+EFFORTS.join('|'));
+  return true;
 }
 function cmdVoice(){
   const mic=document.getElementById('btnMic');
