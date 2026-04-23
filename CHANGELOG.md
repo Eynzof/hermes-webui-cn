@@ -29,6 +29,11 @@
   workspace subtree) and never enumerate blocked system roots. (`api/routes.py`,
   `api/workspace.py`, `static/panels.js`, `static/style.css`) (partial for #616)
 
+## [v0.50.180] — 2026-04-23
+
+### Added
+- **Incremental streaming markdown via `streaming-markdown`** — replaces the per-animation-frame full `innerHTML` re-render with an incremental DOM-building parser. During streaming, only new character deltas are fed to the parser per frame (`_smdWrite()`), eliminating DOM thrashing and improving rendering smoothness. Prism.js / KaTeX state no longer gets reset mid-stream. Falls back to the existing `renderMd()` path when the library is unavailable. (`static/messages.js`, `static/index.html`) Co-authored by @bsgdigital.
+
 ## [v0.50.179] — 2026-04-23
 
 ### Fixed
