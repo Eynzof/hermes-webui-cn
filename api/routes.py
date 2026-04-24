@@ -328,6 +328,7 @@ from api.workspace import (
     read_file_content,
     safe_resolve_ws,
     resolve_trusted_workspace,
+    validate_workspace_to_add,
 )
 from api.upload import handle_upload, handle_transcribe
 from api.streaming import _sse, _run_agent_streaming, cancel_stream
@@ -3029,7 +3030,7 @@ def _handle_workspace_add(handler, body):
     if not path_str:
         return bad(handler, "path is required")
     try:
-        p = resolve_trusted_workspace(path_str)
+        p = validate_workspace_to_add(path_str)
     except ValueError as e:
         return bad(handler, str(e))
     wss = load_workspaces()

@@ -430,6 +430,36 @@ def resolve_trusted_workspace(path: str | Path | None = None) -> Path:
     )
 
 
+
+
+def validate_workspace_to_add(path: str) -> Path:
+    """Validate a path for *adding* to the workspace list (less restrictive than resolve_trusted_workspace).
+
+    When a user explicitly adds a new workspace path, we trust their intent — they
+    have console or filesystem access to that path and are consciously registering it.
+    We only block: non-existent paths, non-directories, and known system roots.
+
+    The stricter ``resolve_trusted_workspace`` is used when *using* an existing workspace
+    (file reads/writes) to prevent path traversal after the list is built.
+    """
+    candidate = Path(path).expanduser().resolve()
+
+    if not candidate.exists():
+        raise ValueError(f"Path does not exist: {candidate}")
+    if not candidate.is_dir():
+        raise ValueError(f"Path is not a directory: {candidate}")
+
+    # Block known system roots and their immediate children
+    for blocked in _workspace_blocked_roots():
+        try:
+            candidate.relative_to(blocked)
+            raise ValueError(f"Path points to a system directory: {candidate}")
+        except ValueError as e:
+            if "system directory" in str(e):
+                raise
+
+    return candidate
+
 def safe_resolve_ws(root: Path, requested: str) -> Path:
     """Resolve a relative path inside a workspace root, raising ValueError on traversal."""
     resolved = (root / requested).resolve()
