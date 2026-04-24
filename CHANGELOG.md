@@ -29,10 +29,18 @@
   workspace subtree) and never enumerate blocked system roots. (`api/routes.py`,
   `api/workspace.py`, `static/panels.js`, `static/style.css`) (partial for #616)
 
-## [v0.50.182] — 2026-04-24
+## [v0.50.183] — 2026-04-24
+
+### Added
+- **`/btw` slash command** — ask an ephemeral side question using current session context without adding to history. Creates a hidden session, streams the answer in a visually distinct bubble, then discards the session. Includes `attachBtwStream()` SSE consumer and `POST /api/btw` route. (`api/routes.py`, `api/background.py`, `static/commands.js`, `static/messages.js`, `static/style.css`)
+- **`/background` slash command** — run a prompt in a parallel background agent without blocking the active conversation. Frontend polls `GET /api/background/status` for results and displays completed answers inline. Includes badge indicator in composer footer. (`api/routes.py`, `api/background.py`, `static/commands.js`, `static/messages.js`, `static/index.html`)
+- **Undo button on last assistant message** — surfaced as an ↩ icon on the last assistant message, calling the existing `/undo` command for discoverability. (`static/ui.js`)
+- **Reasoning effort chip in composer** — visual chip to set reasoning effort level from the composer footer without typing a command. (`static/ui.js`, `static/index.html`, `static/style.css`)
 
 ### Fixed
-- **Auxiliary title model now respected** — when `auxiliary.title_generation` is explicitly configured in `config.yaml`, the WebUI now routes title generation through that dedicated model instead of silently using the chat session's model. Adds `_aux_title_configured()` to detect meaningful auxiliary config, `_aux_title_timeout()` to respect the configured per-task timeout (was hardcoded to 15.0 s), and adds the missing `llm_invalid_aux` fallback path so invalid auxiliary outputs trigger the agent-model fallback. (`api/streaming.py`, `tests/test_title_aux_routing.py`) Co-authored by @starship-s.
+- **Ephemeral sessions correctly skip persistence** — added `return` after the ephemeral `done` event in `_run_agent_streaming()`, preventing ephemeral session state from being written to disk after stream completion. (`api/streaming.py`)
+
+Co-authored by @bergeouss.
 
 ## [v0.50.181] — 2026-04-24
 
