@@ -20,6 +20,7 @@
 - **SSRF: custom provider `base_url` trusted** — `_is_ssrf_blocked()` now whitelists user-configured custom provider base URLs, preventing false SSRF blocks for legitimate private-network endpoints. (`api/routes.py`) @KingBoyAndGirl — Closes #1244
 - **SESSION_AGENT_CACHE LRU limit** — unbounded dict replaced with `functools.lru_cache` (cap 256); prevents memory growth in long-running servers with many sessions. (`api/config.py`) @happy5318 — Closes #1250
 - **Native image uploads as multimodal inputs** — image attachments uploaded to the workspace are now forwarded to vision-capable models as OpenAI-style `image_url` data-URL parts instead of text paths. Magic-byte validation rejects non-image files; workspace path validation uses `.resolve()` + `.relative_to()` (symlink-safe); 20 MiB per-image cap. (`api/streaming.py`, `api/routes.py`, `api/upload.py`, `static/ui.js`) @yzp12138 — Closes #1229
+- **`@provider:model` hint preserved when hint matches active provider** — `_resolve_compatible_session_model()` was stripping the `@provider:` prefix when the hint matched the active provider, causing duplicate model IDs from different providers to snap back to the wrong provider on the next render. The hint is now returned unchanged so `resolve_model_provider()` can route correctly. (`api/routes.py`) @nesquena-hermes — Closes #1253
 
 ## [v0.50.237] — 2026-04-29
 
