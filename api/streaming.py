@@ -1592,6 +1592,7 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                     _cached = SESSION_AGENT_CACHE.get(session_id)
                     if _cached and _cached[1] == _agent_sig:
                         agent = _cached[0]
+                        SESSION_AGENT_CACHE.move_to_end(session_id)  # LRU: mark as recently used
                         logger.debug('[webui] Reusing cached agent for session %s', session_id)
 
                 if agent is not None:
@@ -1617,6 +1618,11 @@ def _run_agent_streaming(session_id, msg_text, model, workspace, stream_id, atta
                     agent = _AIAgent(**_agent_kwargs)
                     with SESSION_AGENT_CACHE_LOCK:
                         SESSION_AGENT_CACHE[session_id] = (agent, _agent_sig)
+                        SESSION_AGENT_CACHE.move_to_end(session_id)  # LRU: mark as recently used
+                        from api.config import SESSION_AGENT_CACHE_MAX
+                        while len(SESSION_AGENT_CACHE) > SESSION_AGENT_CACHE_MAX:
+                            evicted_sid, _ = SESSION_AGENT_CACHE.popitem(last=False)
+                            logger.debug('[webui] Evicted LRU agent from cache: %s', evicted_sid)
                     logger.debug('[webui] Created new agent for session %s', session_id)
 
             # Store agent instance for cancel/interrupt propagation

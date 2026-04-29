@@ -1983,7 +1983,12 @@ SERVER_START_TIME = time.time()
 # Agent cache: reuse AIAgent across messages in the same WebUI session so that
 # _user_turn_count survives between turns.  This mirrors the gateway's
 # _agent_cache pattern and is required for injectionFrequency: "first-turn".
-SESSION_AGENT_CACHE: dict = {}   # session_id -> (AIAgent, config_sig)
+# LRU cache with size limit to prevent memory bloat.
+# All cache operations (get, set, move_to_end, popitem) are protected by
+# SESSION_AGENT_CACHE_LOCK for thread safety in multi-threaded ASGI servers.
+import collections
+SESSION_AGENT_CACHE: collections.OrderedDict = collections.OrderedDict()  # LRU cache
+SESSION_AGENT_CACHE_MAX = 50  # Maximum cached agents (each holds full conversation history)
 SESSION_AGENT_CACHE_LOCK = threading.Lock()
 
 
