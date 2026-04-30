@@ -213,9 +213,9 @@ class TestCancelPreservesToolCalls:
 
         s2 = models.SESSIONS[sid]
         assistant_msgs = [m for m in s2.messages if isinstance(m, dict) and m.get('role') == 'assistant']
-        has_tools = any(m.get('tool_calls') or m.get('tools') for m in assistant_msgs)
+        has_tools = any(m.get('_partial_tool_calls') or m.get('tool_calls') or m.get('tools') for m in assistant_msgs)
         assert has_tools, \
-            f"Expected tool_calls on partial assistant msg after cancel. Got: {assistant_msgs}"
+            f"Expected _partial_tool_calls on partial assistant msg after cancel. Got: {assistant_msgs}"
 
     def test_cancel_with_tools_and_text_preserves_both(self):
         """Cancel after tools + partial text should keep both."""

@@ -150,7 +150,7 @@ def get_hermes_home_for_profile(name: str) -> Path:
     empty, 'default', or does not match the profile-name format (rejects path
     traversal such as '../../etc').
     """
-    if not name or name == 'default' or not _PROFILE_ID_RE.match(name):
+    if not name or name == 'default' or not _PROFILE_ID_RE.fullmatch(name):
         return _DEFAULT_HERMES_HOME
     profile_dir = _DEFAULT_HERMES_HOME / 'profiles' / name
     return profile_dir

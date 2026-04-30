@@ -2782,7 +2782,23 @@ def cancel_stream(stream_id: str) -> bool:
                     if _has_reasoning:
                         _partial_msg['reasoning'] = _cancel_reasoning.strip()
                     if _has_tools:
-                        _partial_msg['tool_calls'] = list(_cancel_tool_calls)
+                        # NOTE: store under the private '_partial_tool_calls' key
+                        # (NOT 'tool_calls'). The captured entries use the WebUI
+                        # internal shape {name, args, done, duration, is_error}
+                        # — they do NOT carry the OpenAI/Anthropic API id +
+                        # function: {name, arguments} envelope. If we put them
+                        # under 'tool_calls', `_sanitize_messages_for_api`
+                        # (which whitelists 'tool_calls' via _API_SAFE_MSG_KEYS)
+                        # would forward them to the next-turn LLM call and
+                        # strict providers (OpenAI, Anthropic, Z.AI/GLM) would
+                        # 400 on the malformed entries — turning a "data lost
+                        # on cancel" bug into a "next message returns 400"
+                        # bug, which is worse. The underscore-prefixed key is
+                        # not in the whitelist, so sanitize strips it. The UI
+                        # reads it via static/messages.js and renders it
+                        # alongside the regular tool_calls path.
+                        # (Opus pre-release review pass 2 of v0.50.251.)
+                        _partial_msg['_partial_tool_calls'] = list(_cancel_tool_calls)
                     _cs.messages.append(_partial_msg)
                 # Cancel marker — flagged _error=True so it is stripped from conversation
                 # history on the next turn (prevents model from seeing "Task cancelled."

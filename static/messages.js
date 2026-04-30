@@ -1072,9 +1072,14 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
         S.session=session;S.messages=(session.messages||[]).filter(m=>m&&m.role);
         const hasMessageToolMetadata=S.messages.some(m=>{
           if(!m||m.role!=='assistant') return false;
+          // Recognize both the standard `tool_calls` (used by completed assistant
+          // turns where the LLM emitted tool_call entries) and the WebUI-internal
+          // `_partial_tool_calls` (used on Stop/Cancel partial messages — see
+          // api/streaming.py cancel_stream).
           const hasTc=Array.isArray(m.tool_calls)&&m.tool_calls.length>0;
+          const hasPartialTc=Array.isArray(m._partial_tool_calls)&&m._partial_tool_calls.length>0;
           const hasTu=Array.isArray(m.content)&&m.content.some(p=>p&&p.type==='tool_use');
-          return hasTc||hasTu;
+          return hasTc||hasPartialTc||hasTu;
         });
         if(!hasMessageToolMetadata&&session.tool_calls&&session.tool_calls.length){
           S.toolCalls=(session.tool_calls||[]).map(tc=>({...tc,done:true}));
