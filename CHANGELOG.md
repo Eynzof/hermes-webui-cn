@@ -4,6 +4,16 @@
 
 ### Fixed
 
+## [v0.50.241] — 2026-04-30
+
+### Added
+- **Inline audio/video media editor with playback speed controls** — MEDIA: tokens and file attachments for audio/video now render as a full media editor card with 0.5×–2× speed buttons, rate stored in `localStorage`, and a `MutationObserver` that auto-applies the saved rate to any newly rendered player. Composer tray shows compact inline players for attached audio/video files. (`static/ui.js`, `static/boot.js`, `static/style.css`, `static/workspace.js`) @nickgiulioni1 — PR #1290 (rebased #1232)
+- **HTTP byte-range streaming for audio/video** — `/api/media?inline=1` now handles `Range:` request headers and returns HTTP 206 Partial Content, enabling seekable playback of large audio and video files. Path access is guarded by the existing `within_allowed` check before `_serve_file_bytes` is called. (`api/routes.py`) @nickgiulioni1 — PR #1290
+- **PDF and media previews in workspace file browser** — PDF, audio, and video files in the workspace panel now render inline instead of forcing download. (`static/workspace.js`) @nickgiulioni1 — PR #1290
+- **Configured model badges** — models that appear in `config.yaml` as primary or fallback are now labeled with `Primary` / `Fallback N` badges in the model picker, and the badge is carried through to the selected-model chip in the composer header. Badge data persists through the on-disk model cache so it survives server restarts. (`api/config.py`, `static/ui.js`, `static/index.html`, `static/style.css`) @renatomott — PR #1287
+- **Appearance autosave** — Theme, skin, and font-size pickers in Settings › Appearance now save immediately with inline `Saving…` / `Saved` / `Failed — Retry` status. These controls no longer set the global unsaved-changes dirty state, so closing Settings after tweaking appearance never prompts to discard. Font size is also now persisted to `config.yaml` and restored on page load. (`static/boot.js`, `static/panels.js`, `api/config.py`, `static/i18n.js`) @franksong2702 — PR #1289, refs #1003
+- **Agent session source normalization** — Imported Hermes Agent sessions now expose `raw_source`, `session_source`, and `source_label` metadata through both `/api/sessions` and gateway watcher SSE snapshots. Existing `source_tag` / `is_cli_session` compatibility fields remain unchanged so sidebar display is preserved; this lays the groundwork for source-aware sidebar policies. (`api/agent_sessions.py`, `api/gateway_watcher.py`, `api/models.py`) @franksong2702 — PR #1294, refs #1013
+
 ## [v0.50.240] — 2026-04-30
 
 ### Added
