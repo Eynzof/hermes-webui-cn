@@ -1,7 +1,7 @@
 async function api(path,opts={}){
   // Strip leading slash so URL resolves relative to location.href (supports subpath mounts)
   const rel = path.startsWith('/') ? path.slice(1) : path;
-  const url=new URL(rel,location.href);
+  const url=new URL(rel,document.baseURI||location.href);
   // Retry up to 2 times on network errors (e.g. stale keep-alive after long idle).
   // Server errors (4xx/5xx) are NOT retried — only connection failures.
   let lastErr;

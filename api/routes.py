@@ -848,7 +848,7 @@ button:hover{background:rgba(124,185,255,.25)}
 def handle_get(handler, parsed) -> bool:
     """Handle all GET routes. Returns True if handled, False for 404."""
 
-    if parsed.path in ("/", "/index.html"):
+    if parsed.path in ("/", "/index.html") or parsed.path.startswith("/session/"):
         from urllib.parse import quote
         from api.updates import WEBUI_VERSION
         version_token = quote(WEBUI_VERSION, safe="")

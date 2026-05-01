@@ -287,7 +287,7 @@ async function populateModelDropdown(){
   const sel=$('modelSelect');
   if(!sel) return;
   try{
-    const _modelsRes=await fetch(new URL('api/models',location.href).href,{credentials:'include'});
+    const _modelsRes=await fetch(new URL('api/models',document.baseURI||location.href).href,{credentials:'include'});
     if(_redirectIfUnauth(_modelsRes)) return;
     const data=await _modelsRes.json();
     if(!data.groups||!data.groups.length) return; // keep HTML defaults
@@ -405,7 +405,7 @@ async function _fetchLiveModels(provider, sel){
   }
   _liveModelFetchPending.add(provider);
   try{
-    const url=new URL('api/models/live',location.href);
+    const url=new URL('api/models/live',document.baseURI||location.href);
     url.searchParams.set('provider',provider);
     const _liveRes=await fetch(url.href,{credentials:'include'});
     if(_redirectIfUnauth(_liveRes)) return;
@@ -1331,8 +1331,11 @@ function renderMd(raw){
       // For JSON/YAML blocks, add tree-view placeholder with raw data
       } else if(lang==='json'||lang==='yaml'){
         const rawCode=esc(code.replace(/\n$/,''));
+        // Encode newlines as &#10; to prevent HTML attribute normalization
+        // (browsers collapse \n to spaces inside attribute values).
+        const rawAttr=rawCode.replace(/"/g,'&quot;').replace(/\n/g,'&#10;');
         const blockId='tree-'+Math.random().toString(36).slice(2,10);
-        _preBlock_stash.push(`<div class="code-tree-wrap" data-raw="${rawCode.replace(/"/g,'&quot;')}" data-lang="${lang}" id="${blockId}">${h}<pre class="tree-raw-view"><code${langAttr}>${rawCode}</code></pre></div>`);
+        _preBlock_stash.push(`<div class="code-tree-wrap" data-raw="${rawAttr}" data-lang="${lang}" id="${blockId}">${h}<pre class="tree-raw-view"><code${langAttr}>${rawCode}</code></pre></div>`);
       // CSV blocks → render as styled table
       } else if(lang==='csv'){
         const rows=code.replace(/\n$/,'').split('\n').filter(r=>r.trim());
@@ -2754,7 +2757,7 @@ function syncTopbar(){
           if(!deferModelCorrection){
             S.session.model=first.value;
             // Persist the correction so the session doesn't re-inject on next load.
-            fetch(new URL('api/session/update',location.href).href,{
+            fetch(new URL('api/session/update',document.baseURI||location.href).href,{
               method:'POST',credentials:'include',
               headers:{'Content-Type':'application/json'},
               body:JSON.stringify({session_id:S.session.id||S.session.session_id,model:first.value})
@@ -3927,7 +3930,6 @@ function _loadJsyamlThen(cb){
 
 function initTreeViews(){
   document.querySelectorAll('.code-tree-wrap:not([data-tree-init])').forEach(wrap=>{
-    wrap.setAttribute('data-tree-init','1');
     const rawText=wrap.dataset.raw;
     const lang=wrap.dataset.lang;
     let parsed=null;
@@ -3939,10 +3941,16 @@ function initTreeViews(){
       if(typeof jsyaml!=='undefined'){
         try{ parsed=jsyaml.load(rawText); }catch(e){ parseFailed=true; }
       }else{
-        // Trigger async load, leave as raw for now
-        parseFailed=true;
+        // Defer: remove init marker so we retry after load.
+        // Note: if CDN load fails, s.onerror does NOT call back —
+        // the wrap stays un-initialised (raw view only), which is safe.
+        wrap.removeAttribute('data-tree-init');
+        _loadJsyamlThen(initTreeViews);
+        return;
       }
     }
+    // Mark as initialised only after we've committed to a render decision
+    wrap.setAttribute('data-tree-init','1');
     if(!parsed || typeof parsed!=='object'){
       if(parseFailed){
         const hint=wrap.querySelector('.tree-raw-view');
@@ -5004,7 +5012,7 @@ async function uploadPendingFiles(){
     fd.append('session_id',S.session.session_id);fd.append('file',f,f.name);
     try{
       const isArchive=_ARCHIVE_EXTS.test(f.name);
-      const url=new URL(isArchive?'api/upload/extract':'api/upload',location.href).href;
+      const url=new URL(isArchive?'api/upload/extract':'api/upload',document.baseURI||location.href).href;
       const res=await fetch(url,{method:'POST',credentials:'include',body:fd});
       if(_redirectIfUnauth(res)) return;
       if(!res.ok){const err=await res.text();throw new Error(err);}

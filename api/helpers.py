@@ -165,7 +165,12 @@ def _build_redact_fn():
         # connection strings, Telegram bot tokens) run regardless of the user's
         # HERMES_REDACT_SECRETS opt-in. The local fallback then handles the
         # common short-prefix shapes the agent omits (ghp_, sk-, hf_, AKIA).
-        return _fallback_redact(redact_sensitive_text(text, force=True))
+        try:
+            agent_redacted = redact_sensitive_text(text, force=True)
+        except TypeError:
+            # Older hermes-agent builds that predate the force kwarg.
+            agent_redacted = redact_sensitive_text(text)
+        return _fallback_redact(agent_redacted)
 
     return _combined_redact
 

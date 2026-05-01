@@ -373,7 +373,7 @@ function _connectTerminalOutput(){
     try{TERMINAL_UI.source.close();}catch(_){}
     TERMINAL_UI.source=null;
   }
-  const url=new URL('api/terminal/output',location.href);
+  const url=new URL('api/terminal/output',document.baseURI||location.href);
   url.searchParams.set('session_id',sid);
   const source=new EventSource(url.href,{withCredentials:true});
   TERMINAL_UI.source=source;
@@ -605,7 +605,7 @@ async function _resizeComposerTerminal(){
 window.addEventListener('beforeunload',()=>{
   if(TERMINAL_UI.source)try{TERMINAL_UI.source.close();}catch(_){}
   if(TERMINAL_UI.sessionId){
-    const url=new URL('api/terminal/close',location.href).href;
+    const url=new URL('api/terminal/close',document.baseURI||location.href).href;
     const body=JSON.stringify({session_id:TERMINAL_UI.sessionId});
     try{
       navigator.sendBeacon(url,new Blob([body],{type:'application/json'}));

@@ -397,6 +397,7 @@ async function _runManualCompression(focusTopic){
         S.toolCalls=data.session.tool_calls||[];
         clearLiveToolCards();
         localStorage.setItem('hermes-webui-session',S.session.session_id);
+        if(typeof _setActiveSessionUrl==='function') _setActiveSessionUrl(S.session.session_id);
         syncTopbar();
         renderMessages();
         await renderSessionList();

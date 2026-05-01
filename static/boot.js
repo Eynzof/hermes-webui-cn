@@ -2,7 +2,7 @@ async function cancelStream(){
   const streamId = S.activeStreamId;
   if(!streamId) return;
   try{
-    await fetch(new URL(`api/chat/cancel?stream_id=${encodeURIComponent(streamId)}`,location.href).href,{credentials:'include'});
+    await fetch(new URL(`api/chat/cancel?stream_id=${encodeURIComponent(streamId)}`,document.baseURI||location.href).href,{credentials:'include'});
   }catch(e){/* cancel request failed — cleanup below still runs */}
   // Clear status unconditionally after the cancel request completes.
   // The SSE cancel event may also fire, but if the connection is already
@@ -939,7 +939,8 @@ function applyBotName(){
   const _srch = document.getElementById('sessionSearch'); if (_srch) _srch.value = '';
   // Initialize reasoning chip on boot (fixes #1103 — chip hidden until session load)
   if(typeof fetchReasoningChip==='function') fetchReasoningChip();
-  const saved=localStorage.getItem('hermes-webui-session');
+  const urlSession=(typeof _sessionIdFromLocation==='function')?_sessionIdFromLocation():null;
+  const saved=urlSession||localStorage.getItem('hermes-webui-session');
   if(saved){
     try{
       await loadSession(saved);
