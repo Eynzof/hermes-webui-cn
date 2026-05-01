@@ -44,7 +44,14 @@ _PROVIDER_ENV_VAR: dict[str, str] = {
     "x-ai": "XAI_API_KEY",
     "opencode-zen": "OPENCODE_ZEN_API_KEY",
     "opencode-go": "OPENCODE_GO_API_KEY",
-    "ollama": "OLLAMA_API_KEY",
+    # NOTE: bare "ollama" (local) deliberately omitted — local Ollama is keyless
+    # by default and the runtime in hermes_cli/runtime_provider.py only consumes
+    # OLLAMA_API_KEY when the base URL hostname is ollama.com (Ollama Cloud).
+    # If we mapped both providers to the same env var, configuring Ollama Cloud
+    # would falsely flip the local Ollama card to "API key configured" (#1410).
+    # Users who genuinely run an authenticated local Ollama can still set a key
+    # via providers.ollama.api_key in config.yaml — that path remains supported
+    # by _provider_has_key().
     "ollama-cloud": "OLLAMA_API_KEY",
     "nvidia": "NVIDIA_API_KEY",
 }

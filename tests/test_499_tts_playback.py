@@ -193,3 +193,57 @@ class TestTtsStyles:
         src = _read('style.css')
         assert 'tts-pulse' in src, \
             "tts-pulse animation not found in style.css"
+
+
+class TestIssue1409TtsToggleBodyClass:
+    """Regression: #1409 — TTS toggle had no effect because of CSS specificity collision.
+
+    Original bug: ``_applyTtsEnabled`` set ``btn.style.display=enabled?'':'none'``.
+    The empty-string branch removes the inline override, after which the
+    ``.msg-tts-btn { display:none; }`` rule from style.css applies — so both
+    "enabled" and "disabled" states left the button hidden.
+
+    Fix: toggle a body-level class (``body.tts-enabled``) and gate the speaker
+    icon on a compound selector ``body.tts-enabled .msg-tts-btn``. This bypasses
+    the inline-style cascade collision and survives ``renderMd()`` re-renders.
+    """
+
+    def test_apply_tts_enabled_uses_body_class(self):
+        """_applyTtsEnabled must toggle the document body's `tts-enabled` class."""
+        src = _read('panels.js')
+        # The new shape: toggle body class instead of writing inline display
+        assert "document.body.classList.toggle('tts-enabled'" in src, (
+            "_applyTtsEnabled must toggle the body.tts-enabled class — see #1409. "
+            "Reverting to inline `style.display` will silently break the toggle "
+            "again because of the .msg-action-btn / .msg-tts-btn cascade."
+        )
+
+    def test_apply_tts_enabled_does_not_use_inline_display(self):
+        """_applyTtsEnabled must NOT set inline `style.display` on .msg-tts-btn."""
+        src = _read('panels.js')
+        # Find the function body and check it doesn't set inline display
+        # on individual buttons (the broken pattern).
+        m = re.search(
+            r'function _applyTtsEnabled\([^)]*\)\s*\{(?P<body>[^}]*)\}',
+            src,
+        )
+        assert m, "_applyTtsEnabled function body not found in panels.js"
+        body = m.group('body')
+        assert '.style.display' not in body, (
+            "_applyTtsEnabled body must not set inline style.display — that's "
+            "the #1409 bug. Use body.classList.toggle('tts-enabled') instead."
+        )
+
+    def test_body_class_selector_in_css(self):
+        """style.css must show .msg-tts-btn only when body.tts-enabled is set."""
+        src = _read('style.css')
+        assert 'body.tts-enabled .msg-tts-btn' in src, (
+            "Missing `body.tts-enabled .msg-tts-btn` selector in style.css — "
+            "without this rule the body class has no visual effect (#1409)."
+        )
+        # The default-hidden rule must still be present (so no body class = no icon).
+        assert '.msg-tts-btn{display:none;}' in src or \
+               re.search(r'\.msg-tts-btn\s*\{[^}]*display\s*:\s*none', src), (
+            "Default `.msg-tts-btn{display:none;}` rule must remain so the "
+            "icon is hidden by default (#1409)."
+        )

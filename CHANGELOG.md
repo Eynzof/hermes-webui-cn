@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- **TTS toggle: speaker icon never appeared when "Text-to-Speech for responses" was ticked** (#1409, closes #1409) — `_applyTtsEnabled()` set `btn.style.display=enabled?'':'none'` on every `.msg-tts-btn`. The `''` branch removes the inline override, after which the `.msg-tts-btn{display:none;}` rule from `style.css` re-hides the button. Both the "enabled" and "disabled" branches left the icon hidden, so the toggle had no visible effect since the feature shipped in #499. Fixed by switching to a body-class toggle (`body.tts-enabled`) plus a compound CSS selector (`body.tts-enabled .msg-tts-btn{display:inline-flex;}`). The new shape bypasses the `.msg-action-btn` / `.msg-tts-btn` cascade collision and survives subsequent `renderMd()` re-renders without re-querying every button. (`static/panels.js`, `static/style.css`, `tests/test_499_tts_playback.py`) — fixes #1409
+
+- **Ollama (local) no longer falsely reports "API key configured" when only Ollama Cloud key is set** (#1410, closes #1410) — both providers were mapped to the same `OLLAMA_API_KEY` env var in `_PROVIDER_ENV_VAR`, so configuring Ollama Cloud lit up the local Ollama card too. The runtime in `hermes_cli/runtime_provider.py` only consumes `OLLAMA_API_KEY` when the base URL hostname is `ollama.com` — local Ollama is keyless by design — so the WebUI was reporting "configured" for a key local Ollama doesn't even read. Dropped the bare `"ollama": "OLLAMA_API_KEY"` mapping; local Ollama users who genuinely need a key can still set `providers.ollama.api_key` in `config.yaml`, and `_provider_has_key()` continues to honor that path. (`api/providers.py`, `tests/test_provider_management.py`) — fixes #1410, reported by @AvidFuturist
+
 ## [v0.50.254] — 2026-05-01
 
 ### Fixed

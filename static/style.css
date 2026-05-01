@@ -1411,8 +1411,12 @@
 .msg-row:hover .msg-actions{opacity:1;}
 .msg-action-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 5px;border-radius:5px;transition:color .12s,background .12s;line-height:1;}
 .msg-action-btn:hover{color:var(--accent-text);background:var(--accent-bg);}
-/* TTS speaker button: hidden by default, shown when TTS enabled */
+/* TTS speaker button: hidden by default, shown when TTS is enabled.
+ * Use body-class selector instead of JS inline-style so the rule survives
+ * subsequent renderMd() passes and is not subject to inline-style cascade
+ * collisions with the .msg-action-btn parent (#1409). */
 .msg-tts-btn{display:none;}
+body.tts-enabled .msg-tts-btn{display:inline-flex;align-items:center;}
 .msg-tts-btn[data-speaking="1"]{color:var(--accent);animation:tts-pulse 1s ease-in-out infinite;}
 @keyframes tts-pulse{0%,100%{opacity:1}50%{opacity:.5}}
 

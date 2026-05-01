@@ -2624,11 +2624,13 @@ function _markSettingsDirty(){
   _settingsDirty = true;
 }
 
-// Apply TTS enabled state: show/hide TTS buttons on all assistant messages
+// Apply TTS enabled state: toggles a body class so the CSS rule
+// `body.tts-enabled .msg-tts-btn` shows/hides the speaker icon. We toggle the
+// body class instead of writing inline `style.display` because the parent
+// `.msg-action-btn` has no display rule, so clearing the inline style let the
+// `.msg-tts-btn{display:none;}` cascade re-hide the button (#1409).
 function _applyTtsEnabled(enabled){
-  document.querySelectorAll('.msg-tts-btn').forEach(btn=>{
-    btn.style.display=enabled?'':'none';
-  });
+  document.body.classList.toggle('tts-enabled', !!enabled);
 }
 
 function _appearancePayloadFromUi(){
