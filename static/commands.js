@@ -84,6 +84,8 @@ let _slashModelCache=null;
 let _slashModelCachePromise=null;
 let _slashPersonalityCache=null;
 let _slashPersonalityCachePromise=null;
+let _agentCommandCache=null;
+let _agentCommandCachePromise=null;
 
 function _normalizeSlashSubArg(value){
   return String(value||'').trim();
@@ -160,6 +162,44 @@ function _getSlashSubArgOptions(spec){
   if(spec==='models') return _loadSlashModelSubArgs();
   if(spec==='personalities') return _loadSlashPersonalitySubArgs();
   return Promise.resolve([]);
+}
+
+async function loadAgentCommandMetadata(force=false){
+  if(_agentCommandCache&&!force) return _agentCommandCache;
+  if(_agentCommandCachePromise&&!force) return _agentCommandCachePromise;
+  _agentCommandCachePromise=(async()=>{
+    try{
+      const data=await api('/api/commands');
+      _agentCommandCache=Array.isArray(data&&data.commands)?data.commands:[];
+    }catch(_){
+      _agentCommandCache=[];
+    }finally{
+      _agentCommandCachePromise=null;
+    }
+    return _agentCommandCache;
+  })();
+  return _agentCommandCachePromise;
+}
+
+async function getAgentCommandMetadata(name){
+  const needle=String(name||'').trim().toLowerCase();
+  if(!needle) return null;
+  const commands=await loadAgentCommandMetadata();
+  return commands.find(cmd=>{
+    if(String(cmd&&cmd.name||'').toLowerCase()===needle) return true;
+    return Array.isArray(cmd&&cmd.aliases)&&cmd.aliases.some(a=>String(a||'').toLowerCase()===needle);
+  })||null;
+}
+
+function cliOnlyCommandResponse(cmdName, meta){
+  const name=String((meta&&meta.name)||cmdName||'').trim();
+  const desc=String((meta&&meta.description)||'').trim();
+  const detail=desc?`\n\n${desc}`:'';
+  let extra='';
+  if(name==='browser'){
+    extra='\n\nBrowser tools in WebUI must be configured server-side with the agent/browser environment. Once configured, ask the model to use browser tools directly; `/browser` itself only works in `hermes chat`.';
+  }
+  return `\`/${name}\` is a Hermes CLI-only command and cannot run inside the WebUI.${detail}${extra}`;
 }
 
 function _parseSlashAutocomplete(text){
@@ -759,7 +799,7 @@ async function cmdStatus(){
     if(r&&r.error){showToast(r.error);return;}
     // Build status card lines matching CLI /status output
     const provider=window._activeProvider||'';
-    const profile=S.activeProfile||'default';
+    const profile=r.profile||S.activeProfile||'default';
     const started=r.created_at?new Date(r.created_at).toLocaleString():t('status_unknown');
     const fmtNum=n=>typeof n==='number'?n.toLocaleString():'0';
     const tokens=r.total_tokens?`${fmtNum(r.input_tokens)} in / ${fmtNum(r.output_tokens)} out`:t('status_no_tokens');
@@ -770,6 +810,7 @@ async function cmdStatus(){
       `**${t('status_title')}:** ${r.title||t('untitled')}`,
       `**${t('status_model')}:** ${r.model||t('usage_default_model')}${provider?'  ('+provider+')':''}`,
       `**${t('status_profile')}:** ${profile}`,
+      `**${t('status_hermes_home')}:** ${r.hermes_home||t('status_unknown')}`,
       `**${t('status_workspace')}:** ${r.workspace}`,
       `**${t('status_personality')}:** ${r.personality||t('usage_personality_none')}`,
       `**${t('status_started')}:** ${started}`,
