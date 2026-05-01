@@ -436,6 +436,10 @@ window._micPendingSend=window._micPendingSend||false;
   let _voiceModeState='idle'; // idle | listening | thinking | speaking
   let _recognition=null;
   let _silenceTimer=null;
+  // Capture the session id at thinking-time so the TTS callback won't read
+  // a different session's last assistant reply if the user navigated away
+  // between send and stream completion. (Opus pre-release advisor.)
+  let _voiceModeThinkingSid=null;
   const SILENCE_MS=1800; // auto-send after 1.8s silence
 
   function _setState(state){
@@ -528,6 +532,9 @@ window._micPendingSend=window._micPendingSend||false;
       return;
     }
     _setState('thinking');
+    // Pin the active session id so the TTS callback won't speak a different
+    // session's reply if the user navigates away mid-stream.
+    _voiceModeThinkingSid=(typeof S!=='undefined'&&S.session)?S.session.session_id:null;
     try{ if(_recognition) _recognition.abort(); }catch(_){}
     _recognition=null;
     // send() is global from boot.js
@@ -536,6 +543,17 @@ window._micPendingSend=window._micPendingSend||false;
 
   function _speakResponse(){
     if(!_voiceModeActive) return;
+    // Bail out if the user navigated to a different session between send and
+    // stream completion. The patched autoReadLastAssistant fires globally;
+    // without this guard it would TTS-read the wrong session's last assistant
+    // message. Drop back to listening on the new session instead.
+    const currentSid=(typeof S!=='undefined'&&S.session)?S.session.session_id:null;
+    if(_voiceModeThinkingSid && currentSid && currentSid!==_voiceModeThinkingSid){
+      _voiceModeThinkingSid=null;
+      _startListening();
+      return;
+    }
+    _voiceModeThinkingSid=null;
     _setState('speaking');
 
     // Find last assistant message
@@ -640,6 +658,7 @@ window._micPendingSend=window._micPendingSend||false;
   function _deactivate(){
     _voiceModeActive=false;
     _voiceModeState='idle';
+    _voiceModeThinkingSid=null;
     modeBtn.classList.remove('active');
     modeBtn.title=t('voice_toggle');
     bar.style.display='none';

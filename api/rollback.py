@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -17,6 +18,25 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Checkpoint identifiers are SHA-style hex hashes from the agent's
+# CheckpointManager. We only allow [A-Za-z0-9_.-]{1,64} (no '/' so the
+# value cannot be a path separator, no leading '.' so it cannot escape
+# upward via '..'/'.'). This is defense-in-depth: the workspace arg is
+# already allowlisted, but ``Path() / "../escape"`` does not normalize,
+# so without this guard a `checkpoint` value of `../<other-ws-hash>/<sha>`
+# would let any authenticated caller diff or restore from another
+# allowlisted workspace's checkpoint store. (Opus pre-release advisor.)
+_CHECKPOINT_ID_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}$")
+
+
+def _validate_checkpoint_id(checkpoint: str) -> str:
+    cid = str(checkpoint or "").strip()
+    if not cid or cid in (".", "..") or not _CHECKPOINT_ID_RE.fullmatch(cid):
+        raise ValueError(
+            "checkpoint id must match [A-Za-z0-9_-][A-Za-z0-9_.-]{0,63}"
+        )
+    return cid
 
 
 def _hermes_home() -> Path:
@@ -157,7 +177,7 @@ def _inspect_checkpoint(ckpt_path: Path, git: str) -> dict[str, Any] | None:
             "files": file_count,
             "path": str(ckpt_path),
         }
-    except (subprocess.TimeoutExpired, OSError, Exception) as e:
+    except (subprocess.TimeoutExpired, OSError) as e:
         logger.debug("Failed to inspect checkpoint %s: %s", ckpt_path, e)
         return None
 
@@ -170,6 +190,7 @@ def get_checkpoint_diff(workspace: str, checkpoint: str) -> dict[str, Any]:
         files_changed: list of changed file paths
     """
     resolved = _resolve_workspace(workspace)
+    checkpoint = _validate_checkpoint_id(checkpoint)
     ws_hash = _workspace_hash(resolved)
     ckpt_dir = _checkpoint_root() / ws_hash / checkpoint
 
@@ -253,6 +274,7 @@ def restore_checkpoint(workspace: str, checkpoint: str) -> dict[str, Any]:
         files_restored: list of restored file paths
     """
     resolved = _resolve_workspace(workspace)
+    checkpoint = _validate_checkpoint_id(checkpoint)
     ws_hash = _workspace_hash(resolved)
     ckpt_dir = _checkpoint_root() / ws_hash / checkpoint
 
