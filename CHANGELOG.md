@@ -21,6 +21,8 @@
 
 - **`_handle_cron_history` clamps `offset` and `limit`** — raw `int(qs.get("offset", ["0"])[0])` raised `ValueError` on `?offset=foo` and surfaced as a generic 500. No upper bound on `limit` either. Now wrapped in `try/except (ValueError, TypeError)` returning a 400 on bad input, and `limit` clamped to `[1, 500]`. (`api/routes.py`)
 
+- **CRITICAL: per-session toolset override (#493) was non-functional** — `_run_agent_streaming` called `_session_meta.get('enabled_toolsets')` on the result of `Session.load_metadata_only()`, which returns a Session **instance** (not a dict). The `AttributeError` was swallowed by the surrounding `except Exception:` block, so the user's toolset chip silently no-op'd every time and the agent always ran with the global toolsets. Caught by Opus pre-release advisor on the empirical streaming path (CI green, contributor tests green — would have shipped non-functional). Fix uses `getattr(_session_meta, 'enabled_toolsets', None)`. Source-level negative-pattern test prevents the dict-access shape from returning. (`api/streaming.py`, `tests/test_v050257_opus_followups.py`)
+
 
 ## [v0.50.256] — 2026-05-01
 

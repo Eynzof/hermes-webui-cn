@@ -1752,8 +1752,15 @@ def _run_agent_streaming(
                 _session_path = SESSION_DIR / f"{session_id}.json"
                 if _session_path.exists():
                     _session_meta = Session.load_metadata_only(session_id)
-                    if _session_meta and _session_meta.get('enabled_toolsets'):
-                        _toolsets = _session_meta['enabled_toolsets']
+                    # load_metadata_only returns a Session INSTANCE, not a dict.
+                    # The previous .get('enabled_toolsets') raised AttributeError
+                    # which was swallowed by the bare except below — the entire
+                    # per-session toolset override silently no-op'd. Use
+                    # getattr() to read the attribute correctly.
+                    # (Opus pre-release advisor finding for v0.50.257.)
+                    _override = getattr(_session_meta, 'enabled_toolsets', None) if _session_meta else None
+                    if _override:
+                        _toolsets = _override
             except Exception as _ts_err:
                 print(f"[webui] WARNING: failed to read per-session toolsets for {session_id}: {_ts_err}", flush=True)
 
