@@ -1883,6 +1883,15 @@ def _run_agent_streaming(
                     if hasattr(agent, 'clarify_callback'):
                         agent.clarify_callback = _agent_kwargs.get('clarify_callback')
                     if _session_db is not None:
+                        # Close any previously held SessionDB connection before
+                        # replacing it. Without this, each streaming request creates
+                        # a new SessionDB whose WAL handles leak indefinitely,
+                        # eventually causing EMFILE crashes (#streaming FD leak).
+                        if hasattr(agent, '_session_db') and agent._session_db is not None:
+                            try:
+                                agent._session_db.close()
+                            except Exception:
+                                pass
                         agent._session_db = _session_db
                     if hasattr(agent, '_api_call_count'):
                         agent._api_call_count = 0
