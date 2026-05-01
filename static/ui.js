@@ -225,6 +225,7 @@ setTimeout(_initMediaPlaybackObserver,0);
 // Dynamic model labels -- populated by populateModelDropdown(), fallback to static map
 let _dynamicModelLabels={};
 window._configuredModelBadges=window._configuredModelBadges||{};
+const MODEL_STATE_KEY='hermes-webui-model-state';
 
 // ── Smart model resolver ────────────────────────────────────────────────────
 // Finds the best matching option value in a <select> for a given model ID.
@@ -239,8 +240,59 @@ function _getOptionProviderId(opt){
     return group.dataset.provider;
   }
   const value=String(opt.value||'');
-  if(value.startsWith('@') && value.includes(':')) return value.slice(1,value.indexOf(':'));
+  if(value.startsWith('@') && value.includes(':')) return value.slice(1,value.lastIndexOf(':'));
   return '';
+}
+function _providerFromModelValue(modelId){
+  const value=String(modelId||'').trim();
+  if(value.startsWith('@')&&value.includes(':')) return value.slice(1,value.lastIndexOf(':'));
+  return '';
+}
+function _modelStateForSelect(sel, modelId){
+  const value=String(modelId||'').trim();
+  if(!value) return {model:'',model_provider:null};
+  const explicitProvider=_providerFromModelValue(value);
+  if(explicitProvider) return {model:value,model_provider:explicitProvider};
+  const opt=sel&&sel.selectedOptions&&sel.selectedOptions[0];
+  const provider=String(_getOptionProviderId(opt)||'').trim();
+  return {model:value,model_provider:(provider&&provider!=='default')?provider:null};
+}
+function _providerQualifiedModelValueForSelect(sel, modelId){
+  return _modelStateForSelect(sel,modelId).model;
+}
+function _readPersistedModelState(){
+  try{
+    const raw=localStorage.getItem(MODEL_STATE_KEY);
+    if(raw){
+      const parsed=JSON.parse(raw);
+      if(parsed&&parsed.model){
+        return {
+          model:String(parsed.model||''),
+          model_provider:parsed.model_provider?String(parsed.model_provider):(_providerFromModelValue(parsed.model)||null),
+        };
+      }
+    }
+  }catch(_){}
+  const legacy=localStorage.getItem('hermes-webui-model');
+  if(!legacy) return null;
+  return {model:legacy,model_provider:_providerFromModelValue(legacy)||null};
+}
+function _writePersistedModelState(model, modelProvider){
+  const value=String(model||'').trim();
+  const provider=modelProvider?String(modelProvider).trim():(_providerFromModelValue(value)||null);
+  if(!value){
+    localStorage.removeItem('hermes-webui-model');
+    localStorage.removeItem(MODEL_STATE_KEY);
+    return;
+  }
+  localStorage.setItem('hermes-webui-model', value);
+  try{
+    localStorage.setItem(MODEL_STATE_KEY, JSON.stringify({model:value,model_provider:provider||null}));
+  }catch(_){}
+}
+function _clearPersistedModelState(){
+  localStorage.removeItem('hermes-webui-model');
+  localStorage.removeItem(MODEL_STATE_KEY);
 }
 function _findModelInDropdown(modelId, sel, preferredProviderId){
   if(!modelId||!sel) return null;
@@ -250,7 +302,12 @@ function _findModelInDropdown(modelId, sel, preferredProviderId){
   // Also strip @provider: prefix from deduplicated model IDs (#1228, #1313).
   const norm=s=>s.toLowerCase().replace(/^[^/]+\//,'').replace(/^@([^:]+:)+/,'').replace(/-/g,'.');
   const target=norm(modelId);
-  const preferred=String(preferredProviderId||'').toLowerCase();
+  let explicitProvider='';
+  const rawModel=String(modelId||'');
+  if(rawModel.startsWith('@')&&rawModel.includes(':')){
+    explicitProvider=rawModel.slice(1,rawModel.lastIndexOf(':'));
+  }
+  const preferred=String(preferredProviderId||explicitProvider||'').toLowerCase();
   if(preferred){
     const providerMatch=options.find(o=>norm(o.value)===target && _getOptionProviderId(o).toLowerCase()===preferred);
     if(providerMatch) return providerMatch.value;
@@ -314,7 +371,7 @@ async function populateModelDropdown(){
       sel.appendChild(og);
     }
     // Set default model from server if no localStorage preference
-    if(data.default_model && !localStorage.getItem('hermes-webui-model')){
+    if(data.default_model && !(typeof _readPersistedModelState==='function'&&_readPersistedModelState()) && !localStorage.getItem('hermes-webui-model')){
       _applyModelToDropdown(data.default_model, sel, data.active_provider||null);
     }
     if(typeof syncModelChip==='function') syncModelChip();
@@ -367,7 +424,7 @@ function _addLiveModelsToSelect(provider, models, sel){
   const existingNorm=new Set([...sel.options].map(o=>_normId(o.value)));
   let added=0;
   const _ap=(window._activeProvider||'').toLowerCase();
-  const _isPortalFetch=_ap && _ap!=='openrouter' && _ap!=='custom' && provider===_ap;
+  const _isPortalFetch=_ap && _ap!=='openrouter' && _ap!=='custom' && _ap!=='openai-codex' && provider===_ap;
   for(const m of models){
     let mid=m.id;
     if(_isPortalFetch && !mid.startsWith('@')){
@@ -383,13 +440,14 @@ function _addLiveModelsToSelect(provider, models, sel){
     _dynamicModelLabels[mid]=m.label||m.id;
     added++;
   }
-  if(added>0 && currentVal) _applyModelToDropdown(currentVal, sel);
+  const currentProvider=(S.session&&S.session.model_provider)||null;
+  if(added>0 && currentVal) _applyModelToDropdown(currentVal, sel, currentProvider);
   // After live models are added, re-apply the session's model in case it was
   // absent from the static list and syncTopbar() fired before the live fetch
   // completed (#1169). This ensures the session model wins over any premature
   // fallback that may have set sel.value to the first available option.
   if(S.session && S.session.model && sel.id==='modelSelect'){
-    const reapplied=_applyModelToDropdown(S.session.model, sel);
+    const reapplied=_applyModelToDropdown(S.session.model, sel, S.session.model_provider||null);
     if(reapplied && typeof syncModelChip==='function') syncModelChip();
   }
   return added;
@@ -1885,7 +1943,10 @@ function setBusy(v){
         // Note: profile is NOT restored — full profile switch requires server interaction
         if(next.model&&S.session&&next.model!==S.session.model){
           S.session.model=next.model;
-          if(typeof _applyModelToDropdown==='function'&&$('modelSelect')) _applyModelToDropdown(next.model,$('modelSelect'));
+        }
+        if(next.model_provider&&S.session) S.session.model_provider=next.model_provider;
+        if(next.model&&S.session){
+          if(typeof _applyModelToDropdown==='function'&&$('modelSelect')) _applyModelToDropdown(next.model,$('modelSelect'),S.session.model_provider||null);
           if(typeof syncModelChip==='function') syncModelChip();
         }
         autoResize();
@@ -1968,8 +2029,9 @@ function _renderQueueChips(sid){
       const _doMerge=(snapshot)=>{
         const combined=snapshot.map(e=>e&&(e.text||e.message||e.content||'')).filter(Boolean).join('\n\n');
         const liveQ=_getSessionQueue(sid,false);
+        const first=snapshot.find(e=>e)||{};
         const firstFiles=(snapshot.find(e=>e&&Array.isArray(e.files)&&e.files.length)||{files:[]}).files;
-        liveQ.length=0;liveQ.push({text:combined,files:firstFiles,_queued_at:Date.now()});
+        liveQ.length=0;liveQ.push({text:combined,files:firstFiles,model:first.model||'',model_provider:first.model_provider||null,_queued_at:Date.now()});
         SESSION_QUEUES[sid]=liveQ;
         try{sessionStorage.setItem('hermes-queue-'+sid,JSON.stringify(liveQ));}catch(_){}
         delete _queueRenderKeys[sid];
@@ -2731,10 +2793,12 @@ function syncTopbar(){
   let currentModel=S.session.model||'';
   if(modelOverride){
     S._pendingProfileModel=null;
-    _applyModelToDropdown(modelOverride,$('modelSelect'));
+    const providerOverride=S._pendingProfileModelProvider||null;
+    S._pendingProfileModelProvider=null;
+    _applyModelToDropdown(modelOverride,$('modelSelect'),providerOverride);
     currentModel=modelOverride;
   } else {
-    const applied=_applyModelToDropdown(currentModel,$('modelSelect'));
+    const applied=_applyModelToDropdown(currentModel,$('modelSelect'),S.session.model_provider||null);
     // If the model isn't in the current provider list, silently reset to the
     // first available model so stale values don't pollute the picker (#829).
     if(!applied && currentModel){
@@ -2756,11 +2820,12 @@ function syncTopbar(){
           modelSel.value=first.value;
           if(!deferModelCorrection){
             S.session.model=first.value;
+            S.session.model_provider=_getOptionProviderId(first)||null;
             // Persist the correction so the session doesn't re-inject on next load.
             fetch(new URL('api/session/update',document.baseURI||location.href).href,{
               method:'POST',credentials:'include',
               headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({session_id:S.session.id||S.session.session_id,model:first.value})
+              body:JSON.stringify({session_id:S.session.id||S.session.session_id,model:first.value,model_provider:S.session.model_provider||null})
             }).catch(()=>{});
           }
         }

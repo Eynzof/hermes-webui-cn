@@ -175,17 +175,39 @@ def _build_redact_fn():
     return _combined_redact
 
 
-_redact_text = _build_redact_fn()
+_redact_fn_cached = _build_redact_fn()
 
 
-def _redact_value(v):
-    """Recursively redact credentials from strings, dicts, and lists."""
+def _redact_text(text: str, *, _enabled: bool | None = None) -> str:
+    """Redact sensitive text from API responses. Respects api_redact_enabled setting.
+
+    The ``_enabled`` parameter is an internal optimization for callers that
+    redact many strings in a single response — `redact_session_data()` reads
+    the setting once and threads it through ``_redact_value`` so we avoid
+    re-loading settings.json from disk per string. (Opus pre-release perf fix.)
+    """
+    if not isinstance(text, str) or not text:
+        return text
+    if _enabled is None:
+        from api.config import load_settings
+        _enabled = bool(load_settings().get("api_redact_enabled", True))
+    if not _enabled:
+        return text
+    return _redact_fn_cached(text)
+
+
+def _redact_value(v, *, _enabled: bool | None = None):
+    """Recursively redact credentials from strings, dicts, and lists.
+
+    ``_enabled`` is threaded through so a single response-level redact pass
+    only reads settings.json once. (Opus pre-release perf fix.)
+    """
     if isinstance(v, str):
-        return _redact_text(v)
+        return _redact_text(v, _enabled=_enabled)
     if isinstance(v, dict):
-        return {k: _redact_value(val) for k, val in v.items()}
+        return {k: _redact_value(val, _enabled=_enabled) for k, val in v.items()}
     if isinstance(v, list):
-        return [_redact_value(item) for item in v]
+        return [_redact_value(item, _enabled=_enabled) for item in v]
     return v
 
 
@@ -194,14 +216,22 @@ def redact_session_data(session_dict: dict) -> dict:
 
     Applies to: messages[], tool_calls[], and title.
     The underlying session file is not modified; redaction is response-layer only.
+
+    Reads the ``api_redact_enabled`` setting ONCE for the entire response and
+    threads it through to avoid hundreds of settings.json reads per session
+    payload (a 50-message session has hundreds of nested strings). When the
+    setting is disabled this is also a fast path: the recursion still walks
+    but every string returns early.
     """
+    from api.config import load_settings
+    _enabled = bool(load_settings().get("api_redact_enabled", True))
     result = dict(session_dict)
     if isinstance(result.get('title'), str):
-        result['title'] = _redact_text(result['title'])
+        result['title'] = _redact_text(result['title'], _enabled=_enabled)
     if 'messages' in result:
-        result['messages'] = _redact_value(result['messages'])
+        result['messages'] = _redact_value(result['messages'], _enabled=_enabled)
     if 'tool_calls' in result:
-        result['tool_calls'] = _redact_value(result['tool_calls'])
+        result['tool_calls'] = _redact_value(result['tool_calls'], _enabled=_enabled)
     return result
 
 

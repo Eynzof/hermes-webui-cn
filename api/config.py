@@ -1034,6 +1034,20 @@ def resolve_model_provider(model_id: str) -> tuple:
         _PORTAL_PROVIDERS = {"nous", "opencode-zen", "opencode-go", "nvidia"}
         if config_provider in _PORTAL_PROVIDERS:
             return model_id, config_provider, config_base_url
+        # The OpenAI Codex provider uses a real base_url, but its default
+        # ChatGPT endpoint cannot serve OpenRouter-style provider/model IDs.
+        # Keep that narrow exception before the custom endpoint protection so
+        # selecting openai/gpt-5.5 from OpenRouter under active Codex still
+        # routes through OpenRouter. Other base_url-backed real providers may be
+        # custom/proxy endpoints, so they must fall through to the branch below.
+        if (
+            config_provider == "openai-codex"
+            and str(config_base_url or "").strip().rstrip("/")
+            == "https://chatgpt.com/backend-api/codex"
+            and prefix in _PROVIDER_MODELS
+            and prefix != config_provider
+        ):
+            return model_id, "openrouter", None
         # If a custom endpoint base_url is configured, don't reroute through OpenRouter
         # just because the model name contains a slash (e.g. google/gemma-4-26b-a4b).
         # The user has explicitly pointed at a base_url, so trust their routing config.
@@ -1054,6 +1068,42 @@ def resolve_model_provider(model_id: str) -> tuple:
             return model_id, "openrouter", None
 
     return model_id, config_provider, config_base_url
+
+
+def model_with_provider_context(model_id: str, model_provider: str | None = None) -> str:
+    """Return the model string to pass to ``resolve_model_provider()``.
+
+    Session persistence keeps the user's selected provider in ``model_provider``
+    instead of forcing every selected model into ``@provider:model`` form. At
+    runtime, however, ``resolve_model_provider()`` still understands that
+    internal disambiguation form, so use it only when the provider context is
+    needed to route away from the current default provider.
+    """
+    model = str(model_id or "").strip()
+    provider = str(model_provider or "").strip().lower()
+    if not model or not provider or provider == "default" or model.startswith("@"):
+        return model
+
+    model_cfg = cfg.get("model", {})
+    config_provider = None
+    if isinstance(model_cfg, dict):
+        config_provider = str(model_cfg.get("provider") or "").strip().lower()
+
+    # If the selected provider is already the configured provider, leaving the
+    # model bare preserves provider-specific base_url/proxy settings.
+    if provider == config_provider:
+        return model
+
+    # OpenRouter selections with slash IDs are explicit provider/model paths.
+    if provider == "openrouter":
+        return f"@{provider}:{model}"
+
+    # For non-OpenRouter slash IDs, keep the ID intact so existing custom/proxy
+    # base_url routing and portal-provider handling remain in charge.
+    if "/" in model:
+        return model
+
+    return f"@{provider}:{model}"
 
 
 def get_effective_default_model(config_data: dict | None = None) -> str:
@@ -2232,6 +2282,7 @@ _SETTINGS_DEFAULTS = {
     "notifications_enabled": False,  # browser notification when tab is in background
     "show_thinking": True,  # show/hide thinking/reasoning blocks in chat view
     "simplified_tool_calling": True,  # group tools/thinking into one quiet activity disclosure
+    "api_redact_enabled": True,  # redact sensitive data (API keys, secrets) from API responses
     "sidebar_density": "compact",  # compact | detailed
     "auto_title_refresh_every": "0",  # adaptive title refresh: 0=off, 5/10/20=every N exchanges
     "busy_input_mode": "queue",  # behavior when sending while agent is running: queue | interrupt | steer
@@ -2349,6 +2400,7 @@ _SETTINGS_BOOL_KEYS = {
     "notifications_enabled",
     "show_thinking",
     "simplified_tool_calling",
+    "api_redact_enabled",
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
 _SETTINGS_LANG_RE = __import__("re").compile(r"^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$")

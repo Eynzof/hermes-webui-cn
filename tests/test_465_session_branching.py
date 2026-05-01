@@ -235,8 +235,8 @@ def test_parent_indicator_clickable():
         src = f.read()
     # Find the parent indicator block
     parent_block = re.search(
-        r'parent_session_id\).*?(?=titleRow\.appendChild)',
-        src, re.DOTALL
+        r'branch-indicator[\s\S]*?parent_session_id[\s\S]*?titleRow\.appendChild',
+        src
     )
     assert parent_block, "Could not find parent indicator block"
     block = parent_block.group(0)

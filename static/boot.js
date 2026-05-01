@@ -199,6 +199,12 @@ $('btnSend').onclick=()=>{
     _stopMic();
     return;
   }
+  // Turn-based voice mode: let the voice mode system handle the send flow
+  if(typeof window._voiceModeActive==='function'&&window._voiceModeActive()){
+    // Immediately send whatever is in the textarea
+    if(typeof window._voiceModeImmediateSend==='function') window._voiceModeImmediateSend();
+    return;
+  }
   send();
 };
 $('btnAttach').onclick=()=>$('fileInput').click();
@@ -403,6 +409,284 @@ $('btnAttach').onclick=()=>$('fileInput').click();
 })();
 window._micActive=window._micActive||false;
 window._micPendingSend=window._micPendingSend||false;
+
+// ── Turn-based voice mode (#1333) ────────────────────────────────────────
+// Chained flow: listen → send → (agent processes) → TTS response → listen again
+(function(){
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const hasSTT=!(!SpeechRecognition);
+  const hasTTS=!!('speechSynthesis' in window);
+
+  // Need both STT and TTS for turn-based voice mode
+  if(!hasSTT||!hasTTS) return;
+
+  const modeBtn=$('btnVoiceMode');
+  const bar=$('voiceModeBar');
+  const indicator=$('voiceModeIndicator');
+  const label=$('voiceModeLabel');
+  const micBtn=$('btnMic');
+  const ta=$('msg');
+
+  if(!modeBtn||!bar||!indicator||!label) return;
+
+  // Show the voice mode button — browser supports both STT and TTS
+  modeBtn.style.display='';
+
+  let _voiceModeActive=false;
+  let _voiceModeState='idle'; // idle | listening | thinking | speaking
+  let _recognition=null;
+  let _silenceTimer=null;
+  // Capture the session id at thinking-time so the TTS callback won't read
+  // a different session's last assistant reply if the user navigated away
+  // between send and stream completion. (Opus pre-release advisor.)
+  let _voiceModeThinkingSid=null;
+  const SILENCE_MS=1800; // auto-send after 1.8s silence
+
+  function _setState(state){
+    _voiceModeState=state;
+    indicator.className='voice-mode-indicator '+state;
+    label.textContent=state==='listening'?t('voice_listening')
+      :state==='speaking'?t('voice_speaking')
+      :state==='thinking'?t('voice_thinking')
+      :'';
+    bar.style.display=_voiceModeActive?(state==='idle'?'none':''):'none';
+  }
+
+  function _startListening(){
+    if(!_voiceModeActive) return;
+    _setState('listening');
+
+    _recognition=new SpeechRecognition();
+    _recognition.continuous=false;
+    _recognition.interimResults=true;
+    _recognition.lang=(typeof _locale!=='undefined'&&_locale._speech)||'en-US';
+
+    let _finalText='';
+
+    _recognition.onstart=()=>{ _finalText=''; };
+
+    _recognition.onresult=(event)=>{
+      // Reset silence timer on any result
+      clearTimeout(_silenceTimer);
+      let interim='';
+      let final=_finalText;
+      for(let i=event.resultIndex;i<event.results.length;i++){
+        const txt=event.results[i][0].transcript;
+        if(event.results[i].isFinal){ final+=txt; _finalText=final; }
+        else{ interim+=txt; }
+      }
+      ta.value=final||interim;
+      autoResize();
+
+      // Auto-send on silence after final result
+      if(_finalText){
+        _silenceTimer=setTimeout(()=>{
+          _voiceModeSend();
+        },SILENCE_MS);
+      }
+    };
+
+    _recognition.onend=()=>{
+      clearTimeout(_silenceTimer);
+      // If we have text and haven't sent yet, send it
+      if(_finalText&&_voiceModeActive&&_voiceModeState==='listening'){
+        _voiceModeSend();
+      } else if(_voiceModeActive&&_voiceModeState==='listening'){
+        // No speech detected — restart listening
+        setTimeout(()=>{ if(_voiceModeActive) _startListening(); },500);
+      }
+    };
+
+    _recognition.onerror=(event)=>{
+      clearTimeout(_silenceTimer);
+      if(event.error==='no-speech'||event.error==='aborted'){
+        // Restart if still active
+        if(_voiceModeActive){
+          setTimeout(()=>{ if(_voiceModeActive) _startListening(); },800);
+        }
+        return;
+      }
+      if(event.error==='not-allowed'||event.error==='service-not-allowed'||event.error==='audio-capture'){
+        _deactivate();
+        showToast(t('mic_denied'));
+        return;
+      }
+      // Other errors — try to restart
+      if(_voiceModeActive){
+        setTimeout(()=>{ if(_voiceModeActive) _startListening(); },1500);
+      }
+    };
+
+    try{ _recognition.start(); }catch(e){
+      // Already started or other error — retry shortly
+      setTimeout(()=>{ if(_voiceModeActive) _startListening(); },1000);
+    }
+  }
+
+  function _voiceModeSend(){
+    if(!_voiceModeActive) return;
+    const text=(ta.value||'').trim();
+    if(!text){
+      ta.value='';
+      setTimeout(()=>{ if(_voiceModeActive) _startListening(); },300);
+      return;
+    }
+    _setState('thinking');
+    // Pin the active session id so the TTS callback won't speak a different
+    // session's reply if the user navigates away mid-stream.
+    _voiceModeThinkingSid=(typeof S!=='undefined'&&S.session)?S.session.session_id:null;
+    try{ if(_recognition) _recognition.abort(); }catch(_){}
+    _recognition=null;
+    // send() is global from boot.js
+    if(typeof send==='function') send();
+  }
+
+  function _speakResponse(){
+    if(!_voiceModeActive) return;
+    // Bail out if the user navigated to a different session between send and
+    // stream completion. The patched autoReadLastAssistant fires globally;
+    // without this guard it would TTS-read the wrong session's last assistant
+    // message. Drop back to listening on the new session instead.
+    const currentSid=(typeof S!=='undefined'&&S.session)?S.session.session_id:null;
+    if(_voiceModeThinkingSid && currentSid && currentSid!==_voiceModeThinkingSid){
+      _voiceModeThinkingSid=null;
+      _startListening();
+      return;
+    }
+    _voiceModeThinkingSid=null;
+    _setState('speaking');
+
+    // Find last assistant message
+    const rows=document.querySelectorAll('.msg-row[data-role="assistant"], .assistant-segment[data-raw-text]');
+    if(!rows.length){ _startListening(); return; }
+    const last=rows[rows.length-1];
+    const rawText=last.dataset.rawText||'';
+    if(!rawText.trim()){ _startListening(); return; }
+
+    // Strip for TTS (reuse existing helper if available)
+    let clean=rawText;
+    if(typeof _stripForTTS==='function') clean=_stripForTTS(rawText);
+    else{
+      // Basic strip: remove code blocks, images, links
+      clean=clean.replace(/```[\s\S]*?```/g,' code block ')
+        .replace(/`([^`]*)`/g,'$1')
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g,'$1')
+        .replace(/#{1,6}\s/g,'')
+        .replace(/[*_~]+/g,'')
+        .replace(/\n{2,}/g,'. ')
+        .replace(/\n/g,' ')
+        .trim();
+    }
+    if(!clean){ _startListening(); return; }
+
+    const utter=new SpeechSynthesisUtterance(clean);
+
+    // Apply saved voice preferences
+    const savedVoice=localStorage.getItem('hermes-tts-voice');
+    const voices=speechSynthesis.getVoices();
+    if(savedVoice&&voices.length){
+      const match=voices.find(v=>v.name===savedVoice);
+      if(match) utter.voice=match;
+    }
+    const savedRate=parseFloat(localStorage.getItem('hermes-tts-rate'));
+    if(!isNaN(savedRate)) utter.rate=Math.min(2,Math.max(0.5,savedRate));
+    const savedPitch=parseFloat(localStorage.getItem('hermes-tts-pitch'));
+    if(!isNaN(savedPitch)) utter.pitch=Math.min(2,Math.max(0,savedPitch));
+
+    utter.onend=()=>{
+      // After speaking, go back to listening
+      if(_voiceModeActive) setTimeout(()=>_startListening(),500);
+    };
+    utter.onerror=()=>{
+      if(_voiceModeActive) setTimeout(()=>_startListening(),1000);
+    };
+
+    speechSynthesis.speak(utter);
+  }
+
+  // Hook into response completion — observe when the agent finishes
+  // We patch setComposerStatus to detect when a response completes
+  const _origSetComposerStatus=(typeof setComposerStatus==='function')?setComposerStatus.bind(window):null;
+
+  window._voiceModeOnResponseComplete=function(){
+    if(_voiceModeActive&&_voiceModeState==='thinking'){
+      // Small delay to let DOM render the final message
+      setTimeout(()=>{
+        if(_voiceModeActive&&_voiceModeState==='thinking'){
+          _speakResponse();
+        }
+      },400);
+    }
+  };
+
+  // Observe S.busy changes to detect response completion
+  // The existing code calls setBusy(false) when response completes
+  const _origSetBusy=(typeof setBusy==='function')?setBusy.bind(window):null;
+  if(_origSetBusy){
+    // We use a MutationObserver-style approach via polling S.busy
+    // Actually, we'll use a simpler approach: hook into the message stream completion
+  }
+
+  // Most reliable hook: use the existing autoReadLastAssistant call site.
+  // We override autoReadLastAssistant so that if voice mode is active, we use our
+  // own speak-and-resume flow instead of the default auto-read.
+  const _origAutoRead=(typeof autoReadLastAssistant==='function')?autoReadLastAssistant:null;
+  window.autoReadLastAssistant=function(){
+    if(_voiceModeActive&&_voiceModeState==='thinking'){
+      _speakResponse();
+      return;
+    }
+    if(_origAutoRead) _origAutoRead.apply(this,arguments);
+  };
+
+  function _activate(){
+    _voiceModeActive=true;
+    modeBtn.classList.add('active');
+    modeBtn.title=t('voice_mode_active');
+    showToast(t('voice_mode_active'),1500);
+    // If the agent is busy, wait — state will be 'thinking' and we'll detect completion
+    if(typeof S!=='undefined'&&S.busy){
+      _setState('thinking');
+      return;
+    }
+    // Cancel any existing TTS
+    if(typeof stopTTS==='function') stopTTS();
+    _startListening();
+  }
+
+  function _deactivate(){
+    _voiceModeActive=false;
+    _voiceModeState='idle';
+    _voiceModeThinkingSid=null;
+    modeBtn.classList.remove('active');
+    modeBtn.title=t('voice_toggle');
+    bar.style.display='none';
+    clearTimeout(_silenceTimer);
+    try{ if(_recognition) _recognition.abort(); }catch(_){}
+    _recognition=null;
+    if(typeof stopTTS==='function') stopTTS();
+    // Restore original autoReadLastAssistant
+    if(_origAutoRead) window.autoReadLastAssistant=_origAutoRead;
+    // Clear textarea if it was only voice input
+    ta.value='';
+    autoResize();
+  }
+
+  modeBtn.onclick=()=>{
+    if(_voiceModeActive){
+      _deactivate();
+      showToast(t('voice_mode_off'),1500);
+    }else{
+      _activate();
+    }
+  };
+
+  // Expose for external use
+  window._voiceModeActive=()=>_voiceModeActive;
+  window._voiceModeDeactivate=_deactivate;
+  window._voiceModeImmediateSend=_voiceModeSend;
+})();
 $('fileInput').onchange=e=>{addFiles(Array.from(e.target.files));e.target.value='';};
 $('btnNewChat').onclick=async()=>{
   // If the current session has no messages, just focus the composer rather than
@@ -463,20 +747,30 @@ $('btnClearPreview').onclick=handleWorkspaceClose;
 $('modelSelect').onchange=async()=>{
   if(!S.session)return;
   const selectedModel=$('modelSelect').value;
+  const modelState=(typeof _modelStateForSelect==='function')
+    ? _modelStateForSelect($('modelSelect'),selectedModel)
+    : {model:selectedModel,model_provider:null};
   if(typeof closeModelDropdown==='function') closeModelDropdown();
-  localStorage.setItem('hermes-webui-model', selectedModel);
-  await api('/api/session/update',{method:'POST',body:JSON.stringify({session_id:S.session.session_id,workspace:S.session.workspace,model:selectedModel})});
-  S.session.model=selectedModel;
+  if(typeof _writePersistedModelState==='function') _writePersistedModelState(modelState.model,modelState.model_provider);
+  else localStorage.setItem('hermes-webui-model', modelState.model);
+  await api('/api/session/update',{method:'POST',body:JSON.stringify({
+    session_id:S.session.session_id,
+    workspace:S.session.workspace,
+    model:modelState.model,
+    model_provider:modelState.model_provider||null,
+  })});
+  S.session.model=modelState.model;
+  S.session.model_provider=modelState.model_provider||null;
   if(typeof syncModelChip==='function') syncModelChip();
   syncTopbar();
+  // Clarify scope: composer model changes are session-local, not the global default.
+  if(typeof showToast==='function'){
+    showToast(t('model_scope_toast')||'Applies to this conversation from your next message.', 3000);
+  }
   // Warn if selected model belongs to a different provider than what Hermes is configured for
   if(typeof _checkProviderMismatch==='function'){
     const warn=_checkProviderMismatch(selectedModel);
     if(warn&&typeof showToast==='function') showToast(warn,4000);
-  }
-  // Clarify scope: composer model changes are session-local, not the global default.
-  if(typeof showToast==='function'){
-    showToast(t('model_scope_toast')||'Applies to this conversation from your next message.', 3000);
   }
 };
 $('msg').addEventListener('input',()=>{
@@ -913,11 +1207,20 @@ function applyBotName(){
   // options are enough for first paint; the dynamic provider list can settle
   // after the saved session is visible.
   const _modelDropdownReady=populateModelDropdown().then(()=>{
-    const savedModel=localStorage.getItem('hermes-webui-model');
+    const savedState=(typeof _readPersistedModelState==='function')
+      ? _readPersistedModelState()
+      : (localStorage.getItem('hermes-webui-model')?{model:localStorage.getItem('hermes-webui-model'),model_provider:null}:null);
+    const savedModel=savedState&&savedState.model;
     if(savedModel && $('modelSelect')){
-      $('modelSelect').value=savedModel;
+      const applied=(typeof _applyModelToDropdown==='function')
+        ? _applyModelToDropdown(savedModel,$('modelSelect'),savedState.model_provider||null)
+        : null;
+      if(!applied) $('modelSelect').value=savedModel;
       // If the value didn't take (model not in list), clear the bad pref
-      if($('modelSelect').value!==savedModel) localStorage.removeItem('hermes-webui-model');
+      if(!applied&&$('modelSelect').value!==savedModel){
+        if(typeof _clearPersistedModelState==='function') _clearPersistedModelState();
+        else localStorage.removeItem('hermes-webui-model');
+      }
       else if(typeof syncModelChip==='function') syncModelChip();
     }
     if(S.session) syncTopbar();

@@ -306,6 +306,7 @@ def _lookup_index_message_count(session_id):
 class Session:
     def __init__(self, session_id: str=None, title: str='Untitled',
                  workspace=str(DEFAULT_WORKSPACE), model=DEFAULT_MODEL,
+                 model_provider=None,
                  messages=None, created_at=None, updated_at=None,
                  tool_calls=None, pinned: bool=False, archived: bool=False,
                  project_id: str=None, profile=None,
@@ -326,6 +327,7 @@ class Session:
         self.title = title
         self.workspace = str(Path(workspace).expanduser().resolve())
         self.model = model
+        self.model_provider = str(model_provider).strip().lower() if model_provider else None
         self.messages = messages or []
         self.tool_calls = tool_calls or []
         self.created_at = created_at or time.time()
@@ -366,7 +368,7 @@ class Session:
         # without parsing the full messages array (which may be 400KB+).
         # Fields are listed in the order they should appear in the JSON file.
         METADATA_FIELDS = [
-            'session_id', 'title', 'workspace', 'model', 'created_at', 'updated_at',
+            'session_id', 'title', 'workspace', 'model', 'model_provider', 'created_at', 'updated_at',
             'pinned', 'archived', 'project_id', 'profile',
             'input_tokens', 'output_tokens', 'estimated_cost',
             'personality', 'active_stream_id',
@@ -448,6 +450,7 @@ class Session:
             'title': self.title,
             'workspace': self.workspace,
             'model': self.model,
+            'model_provider': self.model_provider,
             'message_count': (
                 self._metadata_message_count
                 if self._metadata_message_count is not None
@@ -702,7 +705,7 @@ def get_session(sid, metadata_only=False):
         return s
     raise KeyError(sid)
 
-def new_session(workspace=None, model=None, profile=None):
+def new_session(workspace=None, model=None, profile=None, model_provider=None):
     """Create a new in-memory session.
 
     The session lives in the SESSIONS dict only — no disk write happens until
@@ -736,6 +739,7 @@ def new_session(workspace=None, model=None, profile=None):
     s = Session(
         workspace=workspace or get_last_workspace(),
         model=effective_model,
+        model_provider=model_provider,
         profile=profile,
     )
     with LOCK:

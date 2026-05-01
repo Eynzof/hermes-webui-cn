@@ -15,6 +15,14 @@ const LOCALES = {
     mic_no_speech: 'No speech detected. Try again.',
     mic_network: 'Speech recognition unavailable.',
     mic_error: 'Voice input error: ',
+    // Turn-based voice mode (#1333)
+    voice_toggle: 'Voice input',
+    voice_listening: 'Listening…',
+    voice_speaking: 'Speaking…',
+    voice_thinking: 'Thinking…',
+    voice_error: 'Voice not supported in this browser',
+    voice_mode_active: 'Voice mode on',
+    voice_mode_off: 'Voice mode off',
     session_imported: 'Session imported',
     import_failed: 'Import failed: ',
     import_invalid_json: 'Invalid JSON',
@@ -107,6 +115,7 @@ const LOCALES = {
     model_custom_placeholder: 'e.g. openai/gpt-5.4',
     model_search_placeholder: 'Search models…',
     model_search_no_results: 'No models found',
+    model_group_configured: 'Configured',
     model_scope_advisory: 'Applies to this conversation from your next message.',
     model_scope_toast: 'Applies to this conversation from your next message.',
     // commands.js
@@ -185,6 +194,7 @@ const LOCALES = {
    branch_failed:'Fork failed: ',
    fork_from_here:'Fork from here',
    forked_from:'Forked from',
+   subagent_children:'Subagent sessions',
    btw_asking:'Asking side question...',
   btw_label:'Side question — not in history',
   btw_done:'Side question answered',
@@ -419,6 +429,7 @@ const LOCALES = {
     tab_workspaces: 'Spaces',
     tab_profiles: 'Profiles',
     tab_todos: 'Todos',
+    tab_insights: 'Insights',
     tab_settings: 'Settings',
     new_conversation: 'New conversation',
     filter_conversations: 'Filter conversations...',
@@ -439,6 +450,22 @@ const LOCALES = {
     new_skill: 'New skill',
     personal_memory: 'Personal memory',
     current_task_list: 'Current task list',
+    // Insights
+    insights_title: 'Usage Analytics',
+    insights_sessions: 'Sessions',
+    insights_messages: 'Messages',
+    insights_tokens: 'Tokens',
+    insights_cost: 'Estimated Cost',
+    insights_no_cost: 'N/A',
+    insights_models: 'Models',
+    insights_activity_by_day: 'Activity by Day',
+    insights_activity_by_hour: 'Activity by Hour',
+    insights_peak_hour: 'Peak: {hour}',
+    insights_token_breakdown: 'Token Breakdown',
+    insights_input_tokens: 'Input',
+    insights_output_tokens: 'Output',
+    insights_total: 'Total',
+    insights_footer: 'Showing data from the last {days} days',
     workspace_desc: 'Add and switch workspaces for your sessions.',
     session_meta_messages: (n) => `${n} msg${n === 1 ? '' : 's'}`,
     new_profile: 'New profile',
@@ -462,6 +489,8 @@ const LOCALES = {
     settings_label_notifications: 'Browser notifications',
     settings_desc_notifications: 'Show a system notification when a response completes while the app is in the background.',
     settings_desc_token_usage: 'Displays input/output token count below each assistant reply. Also toggled with /usage.',
+    settings_label_api_redact: 'Redact sensitive data in API responses',
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',
     settings_sidebar_density_compact: 'Compact',
     settings_sidebar_density_detailed: 'Detailed',
     settings_desc_sidebar_density: 'Controls how much metadata the session list shows in the left sidebar.',
@@ -809,6 +838,22 @@ const LOCALES = {
     excalidraw_empty: 'Empty diagram',
     excalidraw_render_error: 'Failed to render diagram',
     excalidraw_simplified: 'Simplified SVG preview — not pixel-identical to Excalidraw canvas',
+    // ── Checkpoints / Rollback ──
+    checkpoint_title: 'Checkpoints',
+    checkpoint_empty: 'No checkpoints found for this workspace.',
+    checkpoint_loading: 'Loading checkpoints…',
+    checkpoint_error: 'Failed to load checkpoints',
+    checkpoint_date: 'Date',
+    checkpoint_message: 'Message',
+    checkpoint_files: 'Files',
+    checkpoint_view_diff: 'View diff',
+    checkpoint_restore: 'Restore',
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,
+    checkpoint_restored: 'Checkpoint restored',
+    checkpoint_diff_title: 'Changes in checkpoint',
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,
   },
 
   ru: {
@@ -821,6 +866,13 @@ const LOCALES = {
     mic_no_speech: 'Речь не распознана. Попробуйте ещё раз.',
     mic_network: 'Распознавание речи недоступно.',
     mic_error: 'Ошибка ввода речи: ',
+    voice_toggle: 'Голосовой ввод',
+    voice_listening: 'Слушаю…',
+    voice_speaking: 'Говорю…',
+    voice_thinking: 'Думаю…',
+    voice_error: 'Голосовой ввод не поддерживается в этом браузере',
+    voice_mode_active: 'Голосовой режим включён',
+    voice_mode_off: 'Голосовой режим выключен',
     session_imported: 'Сеанс импортирован',
     import_failed: 'Не удалось импортировать: ',
     import_invalid_json: 'Неверный JSON',
@@ -960,6 +1012,7 @@ const LOCALES = {
     preserved_task_list_label: 'Сохранённый список задач',
     focus_label: 'Фокус',
     model_search_no_results: 'Модели не найдены',
+    model_group_configured: 'Настроенные',
     model_search_placeholder: 'Поиск моделей…',
     model_scope_advisory: 'Применяется к этой беседе со следующего сообщения.',
     model_scope_toast: 'Применяется к этой беседе со следующего сообщения.',
@@ -1072,6 +1125,7 @@ const LOCALES = {
     tab_workspaces: 'Рабочие пространства',
     tab_profiles: 'Профили',
     tab_todos: 'Список дел',
+    tab_insights: 'Аналитика',
     tab_settings: 'Настройки',
     new_conversation: 'Новая беседа',
     filter_conversations: 'Фильтр бесед...',
@@ -1559,6 +1613,39 @@ const LOCALES = {
     settings_label_tts_rate: 'Скорость речи',
     settings_label_tts_pitch: 'Тон речи',
 
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 
   es: {
@@ -1652,6 +1739,7 @@ const LOCALES = {
     model_custom_placeholder: 'p. ej. openai/gpt-5.4',
     model_search_placeholder: 'Buscar modelos…',
     model_search_no_results: 'No se encontraron modelos',
+    model_group_configured: 'Configurados',
     model_scope_advisory: 'Se aplica a esta conversación desde tu próximo mensaje.',
     model_scope_toast: 'Se aplica a esta conversación desde tu próximo mensaje.',
     // commands.js
@@ -1829,6 +1917,7 @@ const LOCALES = {
     tab_workspaces: 'Espacios',
     tab_profiles: 'Perfiles',
     tab_todos: 'Todos',
+    tab_insights: 'Analíticas',
     tab_settings: 'Ajustes',
     new_conversation: 'Nueva conversación',
     filter_conversations: 'Filtrar conversaciones...',
@@ -2303,6 +2392,46 @@ const LOCALES = {
     settings_desc_tts_voice: 'Seleccionar voz para síntesis de voz',
     settings_label_tts_rate: 'Velocidad de voz',
     settings_label_tts_pitch: 'Tono de voz',
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 
   de: {
@@ -2576,6 +2705,7 @@ const LOCALES = {
     tab_workspaces: 'Spaces',
     tab_profiles: 'Profile',
     tab_todos: 'Todos',
+    tab_insights: 'Statistiken',
     tab_settings: 'Einstellungen',
     new_conversation: 'Neuer Chat',
     filter_conversations: 'Chats filtern...',
@@ -2786,6 +2916,7 @@ const LOCALES = {
     model_custom_placeholder: 'z.B. openai/gpt-5.4',
     model_search_placeholder: 'Modelle suchen…',
     model_search_no_results: 'Keine Modelle gefunden',
+    model_group_configured: 'Konfiguriert',
     session_time_unknown: 'Unbekannt',
     session_time_minutes_ago: 'Vor {n} Minuten',
     session_time_hours_ago: 'Vor {n} Stunden',
@@ -3051,6 +3182,46 @@ const LOCALES = {
     settings_label_tts_rate: 'Sprechgeschwindigkeit',
     settings_label_tts_pitch: 'Tonhöhe',
 
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 
   zh: {
@@ -3144,6 +3315,7 @@ const LOCALES = {
     model_custom_placeholder: '\u4f8b\u5982 openai/gpt-5.4',
     model_search_placeholder: '\u641c\u7d22\u6a21\u578b\u2026',
     model_search_no_results: '\u672a\u627e\u5230\u6a21\u578b',
+    model_group_configured: '已配置',
     model_scope_advisory: '\u4ece\u4e0b\u4e00\u6761\u6d88\u606f\u8d77\u5e94\u7528\u4e8e\u5f53\u524d\u5bf9\u8bdd\u3002',
     model_scope_toast: '\u4ece\u4e0b\u4e00\u6761\u6d88\u606f\u8d77\u5e94\u7528\u4e8e\u5f53\u524d\u5bf9\u8bdd\u3002',
     // commands.js
@@ -3318,6 +3490,7 @@ const LOCALES = {
     tab_skills: '技能',
     tab_tasks: '任务',
     tab_todos: '待办',
+    tab_insights: '统计',
     tab_workspaces: '工作区',
     tab_profiles: '配置',
     tab_settings: '设置',
@@ -3793,6 +3966,46 @@ const LOCALES = {
     settings_desc_tts_voice: '选择语音合成声音',
     settings_label_tts_rate: '语速',
     settings_label_tts_pitch: '音调',
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 
   // Traditional Chinese (zh-Hant)
@@ -4093,6 +4306,7 @@ const LOCALES = {
     tab_skills: '\u6280\u80fd',
     tab_tasks: '\u4efb\u52d9',
     tab_todos: '待辦',
+    tab_insights: '統計',
     tab_workspaces: '\u5de5\u4f5c\u5340',
     new_conversation: '新對話',
     filter_conversations: '篩選對話',
@@ -4300,6 +4514,7 @@ const LOCALES = {
     model_custom_label: '\u81ea\u8a02\u6a21\u578b ID',
     model_custom_placeholder: '\u4f8b\u5982 openai/gpt-5.4',
     model_search_no_results: '\u627e\u4e0d\u5230\u6a21\u578b',
+    model_group_configured: '已設定',
     model_search_placeholder: '\u641c\u5c0b\u6a21\u578b\u2026',
     model_scope_advisory: '\u5f9e\u4e0b\u4e00\u5247\u8a0a\u606f\u8d77\u9069\u7528\u65bc\u6b64\u6703\u8a71\u3002',
     model_scope_toast: '\u5f9e\u4e0b\u4e00\u5247\u8a0a\u606f\u8d77\u9069\u7528\u65bc\u6b64\u6703\u8a71\u3002',
@@ -4643,6 +4858,46 @@ const LOCALES = {
     settings_label_tts_rate: '語速',
     settings_label_tts_pitch: '音調',
 
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 
   pt: {
@@ -4711,6 +4966,7 @@ const LOCALES = {
     model_custom_placeholder: 'ex: openai/gpt-5.4',
     model_search_placeholder: 'Buscar modelos…',
     model_search_no_results: 'Nenhum modelo encontrado',
+    model_group_configured: 'Configurados',
     // commands.js
     cmd_clear: 'Limpar mensagens da conversa',
     cmd_compress: 'Comprimir manualmente o contexto (uso: /compress [tópico])',
@@ -4981,6 +5237,7 @@ const LOCALES = {
     tab_workspaces: 'Spaces',
     tab_profiles: 'Perfis',
     tab_todos: 'Todos',
+    tab_insights: 'Estatísticas',
     tab_settings: 'Configurações',
     new_conversation: 'Nova conversa',
     filter_conversations: 'Filtrar conversas...',
@@ -5305,6 +5562,46 @@ const LOCALES = {
     settings_desc_tts_voice: 'Selecionar voz para síntese de voz',
     settings_label_tts_rate: 'Velocidade da fala',
     settings_label_tts_pitch: 'Tom da fala',
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
   ko: {
     _lang: 'ko',
@@ -5397,6 +5694,7 @@ const LOCALES = {
     model_custom_placeholder: 'e.g. openai/gpt-5.4',
     model_search_placeholder: 'Search models…',
     model_search_no_results: 'No models found',
+    model_group_configured: '구성됨',
     model_scope_advisory: '다음 메시지부터 이 대화에 적용됩니다.',
     model_scope_toast: '다음 메시지부터 이 대화에 적용됩니다.',
     // commands.js
@@ -5694,6 +5992,7 @@ const LOCALES = {
     tab_workspaces: '공간',
     tab_profiles: 'Agent 프로필',
     tab_todos: 'Todos',
+    tab_insights: '통계',
     tab_settings: '설정',
     new_conversation: '새 대화',
     filter_conversations: '대화 필터…',
@@ -6101,6 +6400,46 @@ const LOCALES = {
     settings_desc_tts_voice: '음성 합성 음성 선택',
     settings_label_tts_rate: '말 속도',
     settings_label_tts_pitch: '말 톤',
+    checkpoint_date: 'Date',  // TODO: translate
+    checkpoint_diff_files_changed: (n) => `${n} file${n === 1 ? '' : 's'} changed`,  // TODO: translate
+    checkpoint_diff_no_changes: 'No differences found between this checkpoint and the current workspace.',  // TODO: translate
+    checkpoint_diff_title: 'Changes in checkpoint',  // TODO: translate
+    checkpoint_empty: 'No checkpoints found for this workspace.',  // TODO: translate
+    checkpoint_error: 'Failed to load checkpoints',  // TODO: translate
+    checkpoint_files: 'Files',  // TODO: translate
+    checkpoint_loading: 'Loading checkpoints…',  // TODO: translate
+    checkpoint_message: 'Message',  // TODO: translate
+    checkpoint_restore: 'Restore',  // TODO: translate
+    checkpoint_restore_confirm_message: (ckpt) => `Restore workspace to checkpoint "${ckpt}"? This will overwrite files with the saved versions. Files added after this checkpoint will not be deleted.`,  // TODO: translate
+    checkpoint_restore_confirm_title: 'Restore checkpoint?',  // TODO: translate
+    checkpoint_restored: 'Checkpoint restored',  // TODO: translate
+    checkpoint_title: 'Checkpoints',  // TODO: translate
+    checkpoint_view_diff: 'View diff',  // TODO: translate
+    insights_activity_by_day: 'Activity by Day',  // TODO: translate
+    insights_activity_by_hour: 'Activity by Hour',  // TODO: translate
+    insights_cost: 'Estimated Cost',  // TODO: translate
+    insights_footer: 'Showing data from the last {days} days',  // TODO: translate
+    insights_input_tokens: 'Input',  // TODO: translate
+    insights_messages: 'Messages',  // TODO: translate
+    insights_models: 'Models',  // TODO: translate
+    insights_no_cost: 'N/A',  // TODO: translate
+    insights_output_tokens: 'Output',  // TODO: translate
+    insights_peak_hour: 'Peak: {hour}',  // TODO: translate
+    insights_sessions: 'Sessions',  // TODO: translate
+    insights_title: 'Usage Analytics',  // TODO: translate
+    insights_token_breakdown: 'Token Breakdown',  // TODO: translate
+    insights_tokens: 'Tokens',  // TODO: translate
+    insights_total: 'Total',  // TODO: translate
+    settings_desc_api_redact: 'Self-hosted users can disable for transparency (not recommended for shared instances).',  // TODO: translate
+    settings_label_api_redact: 'Redact sensitive data in API responses',  // TODO: translate
+    voice_error: 'Voice not supported in this browser',  // TODO: translate
+    voice_listening: 'Listening…',  // TODO: translate
+    voice_mode_active: 'Voice mode on',  // TODO: translate
+    voice_mode_off: 'Voice mode off',  // TODO: translate
+    voice_speaking: 'Speaking…',  // TODO: translate
+    voice_thinking: 'Thinking…',  // TODO: translate
+    voice_toggle: 'Voice input',  // TODO: translate
+    subagent_children: 'Subagent sessions',  // TODO: translate
   },
 };
 
