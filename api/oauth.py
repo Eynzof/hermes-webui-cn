@@ -32,8 +32,8 @@ def _read_auth_json():
     if AUTH_JSON_PATH.exists():
         try:
             return json.loads(AUTH_JSON_PATH.read_text())
-        except json.JSONDecodeError:
-            logger.warning("auth.json is corrupted — returning empty dict to prevent data loss")
+        except json.JSONDecodeError as exc:
+            logger.warning("Failed to parse %s: %s", AUTH_JSON_PATH, exc)
             return {}
     return {}
 
@@ -151,8 +151,13 @@ def _save_codex_credentials(token_data):
             break
 
     if not updated:
+        existing_ids = {e["id"] for e in pool.get("openai-codex", [])}
+        for _ in range(3):  # retry on collision
+            cred_id = "codex-oauth-" + uuid.uuid4().hex[:8]
+            if cred_id not in existing_ids:
+                break
         pool["openai-codex"].append({
-            "id": "codex-oauth-" + uuid.uuid4().hex[:8],
+            "id": cred_id,
             "label": "Codex OAuth",
             "auth_type": "oauth",
             "source": "oauth_device",
