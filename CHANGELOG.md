@@ -1,5 +1,17 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.270] — 2026-05-02
+
+### Fixed (1 contributor PR)
+
+- **Bootstrap validates the launcher Python can import the agent** (#1315, by @ccqqlo) — companion fix to v0.50.269's #1478 (which addressed the supervisor crash loop) — this PR addresses a different production failure mode. Pre-fix, `ensure_python_has_webui_deps()` only validated `import yaml`. If the discovered launcher Python had `yaml` but didn't have `run_agent.AIAgent` on its import path (a real failure mode when the WebUI's local venv is found before the agent venv), the server would start and report `/health` 200 OK, then 500 the first chat with a cryptic `AIAgent not available` error. **Fix:** new `_python_can_run_webui_and_agent(python_exe, agent_dir)` helper subprocess-imports both `yaml` and `run_agent.AIAgent`. The function now prefers the agent venv when the launcher can't import AIAgent, falls back to the local venv with `pip install -r requirements.txt` only if needed, and raises a clear RuntimeError pointing at `HERMES_WEBUI_PYTHON` if no interpreter on the system can do both. Plus 1 maintainer compatibility fix (widened 3 `lambda p: p` stubs in `tests/test_bootstrap_foreground.py` from #1478 to `lambda *a, **kw: a[0]` because the new function signature has 2 positional args), 1 maintainer CI fix (sidestep `venv.EnvBuilder.create()` in the fail-loud test by setting `REPO_ROOT` to `tmp_path` with a pre-existing fake `.venv/bin/python` — the prior stub only patched `subprocess.run` but `EnvBuilder` internally calls `subprocess.check_output()`), and 1 Opus advisor optional-followup (one-line comment at `bootstrap.py:_python_can_run_webui_and_agent` documenting why the PYTHONPATH prepend is load-bearing — it shadows stale `run_agent` packages in system site-packages). 2 regression tests in `tests/test_bootstrap_python_selection.py` pin (a) prefer-agent-venv when launcher can't import AIAgent, (b) loud RuntimeError when no interpreter can do both. (`bootstrap.py`, `tests/conftest.py`, `tests/test_bootstrap_foreground.py`, `tests/test_bootstrap_python_selection.py`)
+
+### Notes
+
+- Together with #1478 (v0.50.269), this completes the Bug #1 family of `bootstrap.py` failure modes from issue #1458 — the supervisor-respawn loop AND the start-healthy-then-cryptic-fail mode are both now caught at boot time with clear errors.
+- **#1458 Bugs #2 (state.db FD leak) and #3 (HTTP-unhealthy wedge) remain open** awaiting diagnostic data.
+- Maintainer-applied auto-rebase + auto-fix policy: 3 commits absorbed into the contributor's branch (rebase compatibility, CI fix, optional Opus follow-up). All preserve attribution via `Co-authored-by: ccqqlo` trailers.
+
 ## [v0.50.269] — 2026-05-02
 
 ### Fixed (1 self-built + 2 contributor follow-ups)
