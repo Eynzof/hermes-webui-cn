@@ -61,7 +61,8 @@ def render_md(raw):
         fence_stash.append(m.group())
         return "\x00F" + str(len(fence_stash) - 1) + "\x00"
 
-    s = re.sub(r"(```[\s\S]*?```|`[^`\n]+`)", stash, s)
+    # Fence regex line-anchored to match JS fix for #1438 (allows empty fence)
+    s = re.sub(r"(?:^|\n)[ ]{0,3}```(?:[\s\S]*?\n)?[ ]{0,3}```(?=\n|$)|`[^`\n]+`", stash, s)
     s = re.sub(r"<strong>([\s\S]*?)</strong>", lambda m: "**" + m.group(1) + "**", s, flags=re.I)
     s = re.sub(r"<b>([\s\S]*?)</b>",           lambda m: "**" + m.group(1) + "**", s, flags=re.I)
     s = re.sub(r"<em>([\s\S]*?)</em>",          lambda m: "*"  + m.group(1) + "*",  s, flags=re.I)
@@ -72,10 +73,11 @@ def render_md(raw):
 
     # Fenced code blocks
     def fenced(m):
-        lang, code = m.group(1), m.group(2).rstrip("\n")
+        lang, code = m.group(1), (m.group(2) or "").rstrip("\n")
         h = f'<div class="pre-header">{esc(lang)}</div>' if lang else ""
         return h + "<pre><code>" + esc(code) + "</code></pre>"
-    s = re.sub(r"```([\w+-]*)\n?([\s\S]*?)```", fenced, s)
+    # Fenced code blocks (line-anchored, fixes #1438; allows empty fence)
+    s = re.sub(r"(?:^|\n)[ ]{0,3}```([\w+-]*)\n(?:([\s\S]*?)\n)?[ ]{0,3}```(?=\n|$)", fenced, s)
     s = re.sub(r"`([^`\n]+)`", lambda m: "<code>" + esc(m.group(1)) + "</code>", s)
 
     # Inline formatting (top-level, outside list items)

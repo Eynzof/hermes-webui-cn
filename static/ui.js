@@ -62,8 +62,10 @@ function _renderUserFencedBlocks(text){
   const stash=[];
   let s=String(text||'');
   // Extract fenced code blocks → stash, replace with null-token placeholder
-  s=s.replace(/```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g,(_,lang,code)=>{
+  // CommonMark line-anchored fence (fixes #1438): inner ``` inside content no longer truncates the block.
+  s=s.replace(/(^|\n)[ ]{0,3}```([a-zA-Z0-9_+-]*)\n(?:([\s\S]*?)\n)?[ ]{0,3}```(?=\n|$)/g,(_,lead,lang,code)=>{
     lang=(lang||'').trim().toLowerCase();
+    code=code||'';
     // Remove one trailing newline if present (the fence consumes its own)
     if(code.endsWith('\n')) code=code.slice(0,-1);
     const h=lang?`<div class="pre-header">${esc(lang)}</div>`:'';
@@ -79,7 +81,7 @@ function _renderUserFencedBlocks(text){
     } else {
       stash.push(`${h}<pre><code${langAttr}>${esc(code)}</code></pre>`);
     }
-    return '\x00UF'+(stash.length-1)+'\x00';
+    return lead+'\x00UF'+(stash.length-1)+'\x00';
   });
   // Escape remaining plain text and convert newlines to <br>
   s=esc(s).replace(/\n/g,'<br>');
@@ -1549,7 +1551,12 @@ function renderMd(raw){
   // breaking </pre> closure and corrupting all subsequent message rendering.
   const _preBlock_stash=[];
   const fence_stash=[];
-  s=s.replace(/```([\s\S]*?)```/g,(_,raw)=>{
+  // CommonMark §4.5: opening fence must start a line (with up to 3 spaces of indent)
+  // and closing fence must also start a line. Without line anchoring, a literal ``` inside
+  // a code block (e.g. a regex pattern with ``` in a lookbehind, a script that documents
+  // fences) terminates the outer block at the wrong place, leaking content into the
+  // markdown stream where bold/italic/inline-code passes corrupt it. Fixes #1438.
+  s=s.replace(/(^|\n)[ ]{0,3}```(?:([\s\S]*?)\n)?[ ]{0,3}```(?=\n|$)/g,(_,lead,raw)=>{
     const m=raw.match(/^(\w[\w+-]*)\n?([\s\S]*)$/);
     const lang=m?(m[1]||'').trim().toLowerCase():'';
     const code=m?m[2]:raw.replace(/^\n?/,'');
@@ -1595,7 +1602,7 @@ function renderMd(raw){
         _preBlock_stash.push(`${h}<pre><code${langAttr}>${esc(code.replace(/\n$/,''))}</code></pre>`);
       }
     }
-    return '\x00P'+(_preBlock_stash.length-1)+'\x00';
+    return lead+'\x00P'+(_preBlock_stash.length-1)+'\x00';
   });
   s=s.replace(/`([^`\n]+)`/g,(_,c)=>{fence_stash.push('<code>'+esc(c)+'</code>');return '\x00F'+(fence_stash.length-1)+'\x00';});
   // Math stash: protect $$..$$ and $..$ from markdown processing
@@ -2588,8 +2595,8 @@ function copyMsg(btn){
 // ── TTS: Text-to-Speech via Web Speech API (#499) ──
 // Strips markdown, code blocks, and MEDIA: paths for clean speech output.
 function _stripForTTS(text){
-  // Remove code blocks entirely (```)
-  text=text.replace(/```[\s\S]*?```/g,' ');
+  // Remove code blocks entirely (```) — line-anchored to match #1438 fix
+  text=text.replace(/(^|\n)[ ]{0,3}```(?:[\s\S]*?\n)?[ ]{0,3}```(?=\n|$)/g,' ');
   // Remove inline code
   text=text.replace(/`[^`]+`/g,' ');
   // Strip bold/italic

@@ -1,5 +1,34 @@
 # Hermes Web UI -- Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Markdown renderer: triple backticks mid-line corrupted downstream rendering** (#1438) —
+  The fence regex `/```([\s\S]*?)```/g` had no line anchoring. A literal triple backtick
+  appearing inside a code block's content (e.g. a regex pattern with ``` in a lookbehind,
+  a script that documents fences, embedded markdown-in-markdown) terminated the outer
+  fence at the wrong place. The leaked tail then went through bold/italic/inline-code
+  passes, eating `*` characters as italic markers and producing literal `</strong>` tags
+  in the rendered output. Reported by **Cygnus** (Discord, May 1 2026), relayed by
+  @AvidFuturist.
+
+  **Fix:** anchor all 3 fence regexes per CommonMark §4.5 — opening fence must start a
+  line (with up to 3 spaces of indent), closing fence must also start a line. Pattern:
+  `(^|\n)[ ]{0,3}\`\`\`(?:([\s\S]*?)\n)?[ ]{0,3}\`\`\`(?=\n|$)`. The `(?:...\n)?` group
+  keeps empty fences (`` ```\n``` ``) working. Patched sites:
+
+  - `static/ui.js:1559` — `renderMd()` fenced-block stash (the assistant-message renderer)
+  - `static/ui.js:66` — `_renderUserFencedBlocks()` (user-message renderer)
+  - `static/ui.js:2599` — `_stripForTTS()` (TTS speech pre-strip)
+
+  Plus the Python mirror in `tests/test_sprint16.py`. Triple backticks in the middle of
+  a line are now treated as literal text (CommonMark-conformant) and no longer break out
+  of code blocks. 20 regression tests in `tests/test_issue1438_fence_anchoring.py` cover
+  Cygnus's exact repro, inline `` ``` `` in paragraphs, partial/streaming fences, empty
+  fences, indented fences (3-space ✓, 4-space ✗), language tags, two adjacent blocks,
+  and source-level guards on all 3 patched sites.
+
 ## [v0.50.263] — 2026-05-02
 
 ### Fixed
