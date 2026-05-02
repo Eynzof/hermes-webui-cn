@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 PUBLIC_PATHS = frozenset({
     '/login', '/health', '/favicon.ico',
     '/api/auth/login', '/api/auth/status',
+    '/manifest.json', '/manifest.webmanifest',
+    '/sw.js',
 })
 
 COOKIE_NAME = 'hermes_session'
