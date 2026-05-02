@@ -1836,6 +1836,47 @@ def handle_post(handler, parsed) -> bool:
         )
         return j(handler, {"session": s.compact() | {"messages": s.messages}})
 
+    if parsed.path == "/api/session/duplicate":
+        try:
+            import uuid
+            import time
+            sid = body.get("session_id")
+            if not sid:
+                return bad(handler, "session_id is required")
+
+            session = Session.load(sid)
+            if not session:
+                return bad(handler, "Session not found")
+
+            copied_session = Session(
+                session_id=uuid.uuid4().hex[:12],
+                title=session.title + " (copy)",
+                workspace=session.workspace,
+                model=session.model,
+                model_provider=session.model_provider,
+                messages=session.messages,
+                tool_calls=session.tool_calls,
+                pinned=session.pinned,
+                archived=session.archived,
+                project_id=session.project_id,
+                profile=session.profile,
+                input_tokens=session.input_tokens,
+                output_tokens=session.output_tokens,
+                estimated_cost=session.estimated_cost,
+                created_at=time.time(),
+                updated_at=time.time(),
+            )
+
+            with LOCK:
+                SESSIONS[copied_session.session_id] = copied_session
+                SESSIONS.move_to_end(copied_session.session_id)
+                while len(SESSIONS) > SESSIONS_MAX:
+                    SESSIONS.popitem(last=False)
+
+            return j(handler, {"session": copied_session.compact() | {"messages": copied_session.messages}})
+        except Exception as e:
+            return bad(handler, str(e))
+
     if parsed.path == "/api/default-model":
         try:
             return j(handler, set_hermes_default_model(body.get("model")))

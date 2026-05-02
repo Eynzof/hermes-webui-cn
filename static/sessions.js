@@ -913,9 +913,8 @@ function _openSessionActionMenu(session, anchorEl){
     async()=>{
       closeSessionActionMenu();
       try{
-        const res=await api('/api/session/new',{method:'POST',body:JSON.stringify({workspace:session.workspace,model:session.model,model_provider:session.model_provider||null})});
+        const res=await api('/api/session/duplicate',{method:'POST',body:JSON.stringify({session_id:session.session_id})});
         if(res.session){
-          await api('/api/session/rename',{method:'POST',body:JSON.stringify({session_id:res.session.session_id,title:(session.title||'Untitled')+' (copy)'})});
           await loadSession(res.session.session_id);
           await renderSessionList();
           showToast(t('session_duplicated'));
