@@ -697,7 +697,7 @@ function _setActiveSessionUrl(sid){
   if(typeof window==='undefined'||!window.history||!sid) return;
   const next=_sessionUrlForSid(sid);
   if(next && next!==(window.location.pathname+window.location.search+window.location.hash)){
-    window.history.replaceState({session_id:sid},'',next);
+    window.history.pushState({session_id:sid},'',next);
   }
 }
 
