@@ -7529,6 +7529,7 @@ function t(key, ...args) {
   if (val === undefined) return key;  // final fallback: return key itself
   if (typeof val === 'function') return val(...args);
   if (args.length) {
+    // Locale strings can use numbered placeholders like {0} and {1}.
     return String(val).replace(/\{(\d+)\}/g, (match, idx) => (
       Object.prototype.hasOwnProperty.call(args, idx) ? String(args[idx]) : match
     ));

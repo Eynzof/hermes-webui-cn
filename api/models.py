@@ -479,6 +479,7 @@ class Session:
             # Sessions without a fork must not leak None — see test_session_lineage_metadata_api.
             **({'parent_session_id': self.parent_session_id} if self.parent_session_id else {}),
             'active_stream_id': self.active_stream_id,
+            'pending_user_message': self.pending_user_message,
             'is_cli_session': self.is_cli_session,
             'source_tag': self.source_tag,
             'session_source': self.session_source,
