@@ -139,6 +139,135 @@ def get_active_hermes_home() -> Path:
 
 
 
+# ── Cron-call profile isolation (issue: Scheduled jobs ignored active profile) ─
+# `cron.jobs` reads HERMES_HOME from os.environ (process-global) at function-
+# call time. That bypasses our per-request thread-local profile, so the
+# `/api/crons*` endpoints always returned the process-default profile's jobs.
+# This context manager swaps HERMES_HOME (and the cached module-level constants
+# in cron.jobs) for the duration of a cron call, serialized by a lock so
+# concurrent requests from different profiles don't race on the global env var.
+#
+# Thread-safety note on os.environ mutation:
+# CPython's os.environ assignment is GIL-protected at the bytecode level, but
+# multi-step read-modify-write sequences (snapshot prev → assign new → restore
+# on exit) are NOT atomic without explicit serialization. The _cron_env_lock
+# below makes the entire context-manager body run-to-completion serially, so
+# all webui access to HERMES_HOME goes through one thread at a time. Any
+# subprocess.Popen() call inside `run_job` inherits the env at fork time,
+# which is also under the lock — so child processes always see a consistent
+# (own-profile) HERMES_HOME, never a half-swapped state.
+_cron_env_lock = threading.Lock()
+
+
+class cron_profile_context_for_home:
+    """Context manager that pins HERMES_HOME to an explicit profile home path.
+
+    Use this variant from worker threads that don't have TLS context (e.g. the
+    background thread started by /api/crons/run). The HTTP-side variant below
+    resolves the home via TLS.
+    """
+
+    def __init__(self, home: Path):
+        self._home = Path(home)
+
+    def __enter__(self):
+        _cron_env_lock.acquire()
+        try:
+            self._prev_env = os.environ.get('HERMES_HOME')
+            os.environ['HERMES_HOME'] = str(self._home)
+
+            # Re-patch cron.jobs module-level constants (see main context manager
+            # below for the rationale).
+            self._prev_cj = None
+            try:
+                import cron.jobs as _cj
+                self._prev_cj = (_cj.HERMES_DIR, _cj.CRON_DIR, _cj.JOBS_FILE, _cj.OUTPUT_DIR)
+                _cj.HERMES_DIR = self._home
+                _cj.CRON_DIR = self._home / 'cron'
+                _cj.JOBS_FILE = _cj.CRON_DIR / 'jobs.json'
+                _cj.OUTPUT_DIR = _cj.CRON_DIR / 'output'
+            except (ImportError, AttributeError):
+                logger.debug("cron_profile_context_for_home: cron.jobs unavailable")
+        except Exception:
+            _cron_env_lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if self._prev_env is None:
+                os.environ.pop('HERMES_HOME', None)
+            else:
+                os.environ['HERMES_HOME'] = self._prev_env
+            if self._prev_cj is not None:
+                try:
+                    import cron.jobs as _cj
+                    _cj.HERMES_DIR, _cj.CRON_DIR, _cj.JOBS_FILE, _cj.OUTPUT_DIR = self._prev_cj
+                except (ImportError, AttributeError):
+                    pass
+        finally:
+            _cron_env_lock.release()
+        return False
+
+
+class cron_profile_context:
+    """Context manager that pins HERMES_HOME to the TLS-active profile.
+
+    Usage:
+        with cron_profile_context():
+            from cron.jobs import list_jobs
+            jobs = list_jobs(include_disabled=True)
+
+    Serializes cron API calls across profiles (cron API is low-frequency;
+    serialization cost is negligible compared to correctness).
+    """
+
+    def __enter__(self):
+        _cron_env_lock.acquire()
+        try:
+            self._prev_env = os.environ.get('HERMES_HOME')
+            home = get_active_hermes_home()
+            os.environ['HERMES_HOME'] = str(home)
+
+            # Re-patch cron.jobs module-level constants. They are snapshot at
+            # import time (line 68-71 of cron/jobs.py) and don't participate in
+            # the module's __getattr__ lazy path, so env-var alone is not enough
+            # for callers that reference the module constants directly.
+            self._prev_cj = None
+            try:
+                import cron.jobs as _cj
+                self._prev_cj = (_cj.HERMES_DIR, _cj.CRON_DIR, _cj.JOBS_FILE, _cj.OUTPUT_DIR)
+                _cj.HERMES_DIR = home
+                _cj.CRON_DIR = home / 'cron'
+                _cj.JOBS_FILE = _cj.CRON_DIR / 'jobs.json'
+                _cj.OUTPUT_DIR = _cj.CRON_DIR / 'output'
+            except (ImportError, AttributeError):
+                logger.debug("cron_profile_context: cron.jobs unavailable; env-var only")
+        except Exception:
+            _cron_env_lock.release()
+            raise
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            # Restore env var
+            if self._prev_env is None:
+                os.environ.pop('HERMES_HOME', None)
+            else:
+                os.environ['HERMES_HOME'] = self._prev_env
+
+            # Restore cron.jobs module constants
+            if self._prev_cj is not None:
+                try:
+                    import cron.jobs as _cj
+                    _cj.HERMES_DIR, _cj.CRON_DIR, _cj.JOBS_FILE, _cj.OUTPUT_DIR = self._prev_cj
+                except (ImportError, AttributeError):
+                    pass
+        finally:
+            _cron_env_lock.release()
+        return False
+
+
 def get_hermes_home_for_profile(name: str) -> Path:
     """Return the HERMES_HOME Path for *name* without mutating any process state.
 

@@ -180,12 +180,33 @@ def _cron_output_content_window(text: str, limit: int = _CRON_OUTPUT_CONTENT_LIM
     return text[-limit:]
 
 
-def _run_cron_tracked(job):
-    """Wrapper that tracks running state around cron.scheduler.run_job."""
+def _run_cron_tracked(job, profile_home=None):
+    """Wrapper that tracks running state around cron.scheduler.run_job.
+
+    ``profile_home`` pins HERMES_HOME for this worker thread so output files
+    and run metadata land in the profile that triggered the run, not the
+    process-global default. Captured at dispatch time because the thread runs
+    after the HTTP request (and its TLS profile) has already been cleared.
+    """
     from cron.scheduler import run_job  # import here — runs inside a worker thread
     from cron.jobs import mark_job_run, save_job_output
 
     job_id = job.get("id", "")
+
+    # Pin HERMES_HOME for the duration of this thread using a dedicated
+    # context manager variant that accepts the profile home directly
+    # (threads have no TLS, so get_active_hermes_home() can't resolve).
+    ctx = None
+    if profile_home is not None:
+        try:
+            from api.profiles import cron_profile_context_for_home
+
+            ctx = cron_profile_context_for_home(profile_home)
+            ctx.__enter__()
+        except Exception:
+            logger.exception("Failed to pin profile %s for cron run", profile_home)
+            ctx = None
+
     try:
         success, output, final_response, error = run_job(job)
         save_job_output(job_id, output)
@@ -204,6 +225,11 @@ def _run_cron_tracked(job):
         except Exception:
             logger.debug("Failed to mark manual cron run failure for %s", job_id)
     finally:
+        if ctx is not None:
+            try:
+                ctx.__exit__(None, None, None)
+            except Exception:
+                logger.debug("Failed to release cron_profile_context for %s", job_id)
         _mark_cron_done(job_id)
 
 _PROVIDER_ALIASES = {
@@ -2177,25 +2203,45 @@ def handle_get(handler, parsed) -> bool:
         return  # SSE handled, no JSON response
 
     # ── Cron API (GET) ──
+    # All cron handlers touch cron.jobs which resolves HERMES_HOME from
+    # os.environ (process-global) at call time. Wrap in cron_profile_context
+    # so the TLS-active profile's jobs.json is read, not the process default.
     if parsed.path == "/api/crons":
         from cron.jobs import list_jobs
+        from api.profiles import cron_profile_context
 
-        return j(handler, {"jobs": list_jobs(include_disabled=True)})
+        with cron_profile_context():
+            return j(handler, {"jobs": list_jobs(include_disabled=True)})
 
     if parsed.path == "/api/crons/output":
-        return _handle_cron_output(handler, parsed)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_output(handler, parsed)
 
     if parsed.path == "/api/crons/history":
-        return _handle_cron_history(handler, parsed)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_history(handler, parsed)
 
     if parsed.path == "/api/crons/run":
-        return _handle_cron_run_detail(handler, parsed)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_run_detail(handler, parsed)
 
     if parsed.path == "/api/crons/recent":
-        return _handle_cron_recent(handler, parsed)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_recent(handler, parsed)
 
     if parsed.path == "/api/crons/status":
-        return _handle_cron_status(handler, parsed)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_status(handler, parsed)
 
     # ── Skills API (GET) ──
     if parsed.path == "/api/skills":
@@ -2892,23 +2938,43 @@ def handle_post(handler, parsed) -> bool:
         return _handle_terminal_close(handler, body)
 
     # ── Cron API (POST) ──
+    # See GET-side comment above: wrap in cron_profile_context so writes go
+    # to the TLS-active profile's jobs.json instead of the process default.
     if parsed.path == "/api/crons/create":
-        return _handle_cron_create(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_create(handler, body)
 
     if parsed.path == "/api/crons/update":
-        return _handle_cron_update(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_update(handler, body)
 
     if parsed.path == "/api/crons/delete":
-        return _handle_cron_delete(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_delete(handler, body)
 
     if parsed.path == "/api/crons/run":
-        return _handle_cron_run(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_run(handler, body)
 
     if parsed.path == "/api/crons/pause":
-        return _handle_cron_pause(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_pause(handler, body)
 
     if parsed.path == "/api/crons/resume":
-        return _handle_cron_resume(handler, body)
+        from api.profiles import cron_profile_context
+
+        with cron_profile_context():
+            return _handle_cron_resume(handler, body)
 
     # ── File ops (POST) ──
     if parsed.path == "/api/file/delete":
@@ -5166,7 +5232,22 @@ def _handle_cron_run(handler, body):
         return j(handler, {"ok": False, "job_id": job_id, "status": "already_running",
                             "elapsed": round(elapsed, 1)})
     _mark_cron_running(job_id)
-    threading.Thread(target=_run_cron_tracked, args=(job,), daemon=True).start()
+    # Capture the TLS-active profile home now — the thread runs after the
+    # request finishes, so TLS is gone by then.
+    #
+    # Resolve directly without a try/except: get_active_hermes_home() does
+    # in-memory dict reads + a single Path.is_dir() stat, so the only way
+    # it could raise from inside a request handler is if api.profiles
+    # itself partially failed to import (in which case we'd already be
+    # 500-ing the whole request). A silent fallback to None here would
+    # re-introduce the exact bug #1573 fixes — the worker thread would
+    # run unpinned against the process-global HERMES_HOME — so we'd
+    # rather let any unexpected exception 500 the request than corrupt
+    # cross-profile state.
+    from api.profiles import get_active_hermes_home
+
+    _profile_home = get_active_hermes_home()
+    threading.Thread(target=_run_cron_tracked, args=(job, _profile_home), daemon=True).start()
     return j(handler, {"ok": True, "job_id": job_id, "status": "running"})
 
 
