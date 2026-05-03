@@ -335,17 +335,20 @@ def _clear_stale_stream_state(session) -> bool:
         stream_alive = stream_id in STREAMS
     if stream_alive:
         return False
-    session.active_stream_id = None
-    if hasattr(session, "pending_user_message"):
-        session.pending_user_message = None
-    if hasattr(session, "pending_attachments"):
-        session.pending_attachments = []
-    if hasattr(session, "pending_started_at"):
-        session.pending_started_at = None
-    try:
-        session.save()
-    except Exception:
-        pass
+    with _get_session_agent_lock(session.session_id):
+        if getattr(session, "active_stream_id", None) != stream_id:
+            return False
+        session.active_stream_id = None
+        if hasattr(session, "pending_user_message"):
+            session.pending_user_message = None
+        if hasattr(session, "pending_attachments"):
+            session.pending_attachments = []
+        if hasattr(session, "pending_started_at"):
+            session.pending_started_at = None
+        try:
+            session.save()
+        except Exception:
+            pass
     return True
 
 # ── CSRF: validate Origin/Referer on POST ────────────────────────────────────
