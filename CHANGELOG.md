@@ -1,5 +1,17 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.275] — 2026-05-03
+
+### Fixed (1 PR — first-time contributor)
+
+- **Static assets served correctly under `/session/*` routes** (#1505, first-time contributor @rickchew) — when the browser navigates to `/session/<id>`, it requests stylesheets and scripts relative to that URL (e.g. `GET /session/static/style.css`). The existing `/session/*` catch-all in `api/routes.py` `handle_get()` matched these requests first and returned the 114KB HTML index page with `Content-Type: text/html`, which strict-MIME browsers refuse to apply as a stylesheet (`X-Content-Type-Options: nosniff` is set). A clever inline `<base href>` injection in `static/index.html:17` papered over the visible breakage on most browsers — but Chrome's preload scanner had already fired off all 12 wrong-URL requests (~1.4MB wasted bandwidth per session-URL navigation), and any strict-MIME / CSP / sandboxed-loader path failed outright. Verified live on master before merge: `curl -si http://127.0.0.1:8787/session/static/style.css` returned `200 OK / Content-Type: text/html / 114563 bytes`. **Fix:** add a guard in `handle_get()` BEFORE the `/session/` catch-all that detects `/session/static/*`, strips the `/session` prefix, and delegates to `_serve_static()` (which carries its own `Path.resolve()+relative_to(static_root)` traversal sandbox). Whitelist `/session/static/*` in `check_auth()` to match the existing `/static/*` auth-exemption policy. Maintainer follow-ups absorbed in-release: dropped an unused `from urllib.parse import urlparse as _up` import the contributor accidentally left in their hunk, and added 5 regression tests in `tests/test_session_static_assets.py` pinning (1) `/session/static/style.css` returns `text/css`, (2) `/session/static/ui.js` returns `application/javascript`, (3) `/session/<id>` (no `/static/`) still serves the HTML index, (4) path-traversal `/session/static/../../etc/passwd` still 404s after the prefix strip, (5) `/session/static/*` matches `/static/*` auth policy while non-static `/session/<id>` still requires auth. Co-authored-by trailer preserves rickchew attribution.
+
+### Notes
+
+- 3918 → 3923 tests passing (+5 regression tests for #1505).
+- Pre-release Opus advisor pass: SHIP. Path-traversal sandbox holds for both literal `..` (Path.resolve+relative_to) and URL-encoded `%2e%2e` (urlparse leaves percent-escapes literal, file doesn't exist → 404). Auth-exemption breadth is benign because `_serve_static`'s sandbox 404s any escape attempt before bytes leak.
+- Closes #1505. No follow-up issues filed.
+
 ## [v0.50.274] — 2026-05-03
 
 ### Fixed (1 PR — three sub-bugs from #1420)
