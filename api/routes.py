@@ -5217,12 +5217,19 @@ def _handle_cron_run(handler, body):
     _mark_cron_running(job_id)
     # Capture the TLS-active profile home now — the thread runs after the
     # request finishes, so TLS is gone by then.
-    try:
-        from api.profiles import get_active_hermes_home
+    #
+    # Resolve directly without a try/except: get_active_hermes_home() does
+    # in-memory dict reads + a single Path.is_dir() stat, so the only way
+    # it could raise from inside a request handler is if api.profiles
+    # itself partially failed to import (in which case we'd already be
+    # 500-ing the whole request). A silent fallback to None here would
+    # re-introduce the exact bug #1573 fixes — the worker thread would
+    # run unpinned against the process-global HERMES_HOME — so we'd
+    # rather let any unexpected exception 500 the request than corrupt
+    # cross-profile state.
+    from api.profiles import get_active_hermes_home
 
-        _profile_home = get_active_hermes_home()
-    except Exception:
-        _profile_home = None
+    _profile_home = get_active_hermes_home()
     threading.Thread(target=_run_cron_tracked, args=(job, _profile_home), daemon=True).start()
     return j(handler, {"ok": True, "job_id": job_id, "status": "running"})
 

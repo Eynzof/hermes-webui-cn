@@ -146,6 +146,16 @@ def get_active_hermes_home() -> Path:
 # This context manager swaps HERMES_HOME (and the cached module-level constants
 # in cron.jobs) for the duration of a cron call, serialized by a lock so
 # concurrent requests from different profiles don't race on the global env var.
+#
+# Thread-safety note on os.environ mutation:
+# CPython's os.environ assignment is GIL-protected at the bytecode level, but
+# multi-step read-modify-write sequences (snapshot prev → assign new → restore
+# on exit) are NOT atomic without explicit serialization. The _cron_env_lock
+# below makes the entire context-manager body run-to-completion serially, so
+# all webui access to HERMES_HOME goes through one thread at a time. Any
+# subprocess.Popen() call inside `run_job` inherits the env at fork time,
+# which is also under the lock — so child processes always see a consistent
+# (own-profile) HERMES_HOME, never a half-swapped state.
 _cron_env_lock = threading.Lock()
 
 

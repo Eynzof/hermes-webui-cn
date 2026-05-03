@@ -152,3 +152,44 @@ def test_cron_profile_context_serializes_concurrent_access(tmp_path):
     first, second, third, fourth = observed
     assert first[0] == "enter" and second[0] == "exit" and first[1] == second[1]
     assert third[0] == "enter" and fourth[0] == "exit" and third[1] == fourth[1]
+
+
+def test_cron_run_does_not_silently_swallow_profile_resolution_errors():
+    """_handle_cron_run must NOT silently fall through to profile_home=None
+    when get_active_hermes_home() raises.
+
+    A silent fallback would re-introduce the exact bug #1573 fixes — the
+    worker thread would run unpinned against the process-global HERMES_HOME,
+    silently corrupting cross-profile state. We'd rather 500 the request
+    than risk that, since get_active_hermes_home() raising at all from
+    inside a request handler means api.profiles is in a state we shouldn't
+    be making cron decisions in.
+
+    Source-level assertion to catch any future re-introduction of the
+    over-broad except clause.
+    """
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "api" / "routes.py").read_text(encoding="utf-8")
+
+    # Locate _handle_cron_run definition; assert the spawn block does NOT
+    # wrap get_active_hermes_home() in a bare except that falls back to None.
+    idx = src.find("def _handle_cron_run(handler, body):")
+    assert idx != -1, "_handle_cron_run not found"
+    body = src[idx : idx + 4000]
+
+    # The spawn site must call get_active_hermes_home() unguarded (no
+    # try/except around it specifically), because a silent fallback to None
+    # is exactly what would re-introduce #1573.
+    spawn_idx = body.find("threading.Thread(target=_run_cron_tracked")
+    assert spawn_idx != -1, "thread spawn not found in _handle_cron_run"
+
+    # Look at the 1500 chars before the spawn — should NOT contain the
+    # `_profile_home = None` fallback pattern.
+    pre_spawn = body[max(0, spawn_idx - 1500) : spawn_idx]
+    assert "_profile_home = None" not in pre_spawn, (
+        "_handle_cron_run silently falls back to _profile_home=None when "
+        "get_active_hermes_home() raises. That re-introduces bug #1573 — "
+        "the worker thread would run unpinned against the process-global "
+        "HERMES_HOME. Let the exception propagate (500 the request) rather "
+        "than corrupt cross-profile state silently."
+    )
