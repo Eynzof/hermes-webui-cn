@@ -1,5 +1,24 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.286] — 2026-05-03
+
+### Fixed (1 PR — closes #1560)
+
+- **Settings password field silently no-ops when `HERMES_WEBUI_PASSWORD` env var is set** (#1561, @dutchaiagency; closes #1560 — resurfaced from #1139) — when `HERMES_WEBUI_PASSWORD` was exported, `api/auth.py:get_password_hash()` already returned the env-var hash and ignored `settings.json["password_hash"]`. But the Settings → System pane never knew this, so the password field accepted input, called the API, returned 200, and showed a green "Saved" toast — every subsequent login still required the env-var password. Same for "Disable Auth" / clearing the password. The save genuinely succeeded; it was just unreachable. **Fix — three layers:** (1) `GET /api/settings` now includes `password_env_var: bool(env)` so the UI can detect the locked state. Hash still stripped from response (existing invariant). (2) `POST /api/settings` refuses `_set_password` and `_clear_password` with **HTTP 409** + an explanatory message naming `HERMES_WEBUI_PASSWORD` when the env var is set. The 409 short-circuits BEFORE `save_settings()`, so the on-disk hash is never touched. Whitespace-only env values are not treated as set (matches `api/auth.py` `.strip()` guard). (3) Frontend (`static/index.html`, `static/panels.js`, `static/i18n.js`) — added `#settingsPasswordEnvLock` banner div in the System pane (hidden by default). When `password_env_var` is true: password input is `disabled`, value cleared, placeholder swapped to a localized "Locked: HERMES_WEBUI_PASSWORD env var is set" string; banner revealed; Disable Auth button hidden (its POST would 409 anyway); Sign Out stays available since it only clears the session cookie. 2 new i18n keys (`password_env_var_locked`, `password_env_var_locked_placeholder`) added to all 9 shipped locales (en, ja, ru, es, de, zh, zh-Hant, pt, ko). Each locale's banner string literally names `HERMES_WEBUI_PASSWORD` so users can grep their environment. 23 new regression tests in `tests/test_issue1560_password_env_var_lock.py` (12 tests) and `tests/test_1560_password_env_var_no_op.py` (11 tests) covering both the surfacing flag, the 409 refusal on both write paths, frontend lock behavior, and 9-locale parity. Pre-release Opus advisor pass. Maintainer-rebased from contributor's v0.50.283 base onto current master cleanly.
+
+### Tests
+
+4028 → **4051 passing** (+23 from PR #1561). 0 regressions. Full suite in 115s.
+
+### Pre-release verification
+
+- All 23 PR-1561 tests pass standalone in 3.6s.
+- All 4051 tests pass in the full suite (110s).
+- Browser sanity (HTTP API checks against port 8789): 11/11 endpoints verified.
+- All modified JS files (`static/i18n.js`, `static/panels.js`) pass `node -c` syntax check.
+- PR rebase verified clean: `git diff origin/master --stat` shows ONLY the 6 files PR #1561 touches (no spurious deletions of v0.50.284/v0.50.285 test files that the older PR base would have dropped).
+
+
 ## [v0.50.285] — 2026-05-03
 
 ### Fixed (1 PR — same-day hotfix-of-hotfix)
