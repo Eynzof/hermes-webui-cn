@@ -279,6 +279,29 @@ PROBE_TIMEOUT_SECONDS = 5.0
 PROBE_MAX_BYTES = 256 * 1024
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow HTTP redirects on the probe path.
+
+    `urllib.request.urlopen` follows redirects by default — without this
+    handler, a probe at `http://example.com/v1/models` could be redirected
+    to `http://internal-service:8080/admin`, surfacing internal HTTP services
+    to whatever the probe targets next.  The probe is already gated behind
+    WebUI auth and the local-network check, so the threat model is
+    "authenticated user enumerating internal services" — same as `curl`
+    from their browser DevTools.  Disabling redirects tightens defaults
+    without breaking any legitimate use case (a self-hosted /models endpoint
+    that 3xx-redirects is itself misconfigured).  Redirects surface to the
+    caller as `unreachable` (mapped from `HTTPError(3xx)` in the probe).
+    Reviewer-flagged in PR #1501 (#1499 + #1500).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # tell urllib to NOT follow; raises HTTPError(3xx) instead
+
+
+_PROBE_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+
+
 def probe_provider_endpoint(
     provider: str,
     base_url: str,
@@ -348,11 +371,23 @@ def probe_provider_endpoint(
     req = urllib.request.Request(probe_url, headers=headers, method="GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _PROBE_OPENER.open(req, timeout=timeout) as resp:
             status = resp.status
             body = resp.read(PROBE_MAX_BYTES + 1)
     except urllib.error.HTTPError as exc:
-        # 4xx / 5xx with a body — categorize.
+        # 3xx / 4xx / 5xx with a body — categorize.  3xx happens when the
+        # endpoint redirects (we refuse to follow on the probe path — see
+        # _NoRedirectHandler).  Map to `unreachable` rather than introducing a
+        # new error code, since a self-hosted /models endpoint that 3xx-
+        # redirects is itself misconfigured.
+        if 300 <= exc.code < 400:
+            code = "unreachable"
+            detail = (
+                f"HTTP {exc.code} — endpoint returned a redirect "
+                f"(probe does not follow redirects).  Point base_url at the "
+                f"final URL directly."
+            )
+            return {"ok": False, "error": code, "detail": detail, "status": exc.code}
         code = "http_4xx" if 400 <= exc.code < 500 else "http_5xx"
         # Try to surface a useful detail (LM Studio sometimes returns text/plain).
         try:

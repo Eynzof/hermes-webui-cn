@@ -283,6 +283,64 @@ class TestIssue1499OnboardingProbe:
             "(api_key would have leaked)"
         )
 
+    def test_probe_does_not_follow_redirects(self):
+        """Probe refuses HTTP redirects — surfaces as `unreachable` with a 3xx hint.
+
+        SSRF defense-in-depth: an authenticated user typing a base URL that
+        redirects (intentionally or otherwise) should not have the probe
+        chase the redirect to internal services.  The auth + local-network
+        gate already restricts the practical attack surface, but tightening
+        the redirect default is cheap insurance.  Reviewer-flagged on PR #1501.
+        """
+        import json
+        import threading
+        import time
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        from api.onboarding import probe_provider_endpoint
+
+        class _RedirectHandler(BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                if self.path == "/v1/models":
+                    self.send_response(302)
+                    self.send_header("Location", "/different-endpoint")
+                    self.end_headers()
+                    return
+                # If we accidentally follow the redirect, the test sees data
+                # and assertion fails.
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"data": [{"id": "should-not-see"}]}).encode())
+
+            def log_message(self, *args, **kwargs):  # noqa: N802
+                pass
+
+        httpd = HTTPServer(("127.0.0.1", 0), _RedirectHandler)
+        port = httpd.server_address[1]
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        time.sleep(0.05)
+        try:
+            r = probe_provider_endpoint("lmstudio", f"http://127.0.0.1:{port}/v1")
+            assert r["ok"] is False, (
+                f"Probe followed a redirect — should have refused. Got {r!r}. "
+                f"_NoRedirectHandler is missing or broken."
+            )
+            assert r["error"] == "unreachable", (
+                f"3xx redirect should surface as 'unreachable', got {r['error']!r}"
+            )
+            assert r.get("status") == 302
+            # Detail must mention "redirect" so the user understands what
+            # happened — the localized error banner uses this string verbatim.
+            assert "redirect" in r["detail"].lower()
+            # Crucially, the probe must NOT have surfaced data from the
+            # redirect target (which our test handler returned for any other path).
+            assert "should-not-see" not in str(r)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
     def test_probe_error_codes_set_is_documented(self):
         """The PROBE_ERROR_CODES tuple is the public contract for the frontend.
 
