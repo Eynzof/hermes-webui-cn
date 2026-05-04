@@ -189,10 +189,13 @@ if [ "A${whoami}" == "Ahermeswebuitoo" ]; then
   # using usermod for the already create hermeswebui user, knowing it is not already in use
   # per usermod manual: "You must make certain that the named user is not executing any processes when this command is being executed"
   # Guard for read-only root filesystem (podman with read_only=true, issue #1470).
+  # The script runs as hermeswebuitoo (non-root), but groupmod/usermod use sudo.
+  # So we must check writability via sudo — a non-root user cannot write /etc/group
+  # even on a normal writable rootfs, which caused a false positive (issue #1658).
   _readonly_root=false
-  if [ ! -w /etc/group ] || [ ! -w /etc/passwd ]; then
+  if ! sudo sh -c 'test -w /etc/group && test -w /etc/passwd' 2>/dev/null; then
     _readonly_root=true
-    echo "  !! Detected read-only root filesystem — /etc/group or /etc/passwd is not writable"
+    echo "  !! Detected read-only root filesystem — /etc/group or /etc/passwd is not writable (even via sudo)"
   fi
   if [ "A${_readonly_root}" == "Atrue" ]; then
     _current_hermeswebui_gid=$(id -g hermeswebui 2>/dev/null || echo "")

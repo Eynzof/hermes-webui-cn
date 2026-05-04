@@ -347,6 +347,13 @@ def _run_codex_oauth_worker(flow_id: str) -> None:
             if not authorization_code or not code_verifier:
                 raise RuntimeError("Device auth response missing authorization_code or code_verifier")
             tokens = _exchange_codex_authorization(authorization_code, code_verifier)
+            # Re-check status under lock before persisting: a cancel/expire that
+            # raced with the device-token + token-exchange network calls must
+            # win, so we don't persist credentials the user explicitly aborted.
+            with _OAUTH_FLOWS_LOCK:
+                current = _OAUTH_FLOWS.get(flow_id)
+                if not current or current.get("status") != "pending":
+                    return
             _persist_codex_credentials(Path(live["hermes_home"]), tokens)
             _set_flow_status(flow_id, "success")
             return

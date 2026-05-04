@@ -1,5 +1,54 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.297] — 2026-05-04
+
+### Fixed (3 PRs — closes #1658; refs #1458, #1652)
+
+- **Docker container no longer enters a crash loop on every normal Docker setup** (#1659 by @bergeouss, closes #1658) — PR #1635 (v0.50.295) added a writability guard `[ ! -w /etc/group ] || [ ! -w /etc/passwd ]` for podman `read_only=true` containers. Bug: the script runs as the non-root `hermeswebuitoo` user, so `/etc/group` (owned by root) is **always** non-writable from that user — guard fires on EVERY normal Docker setup, container enters a crash loop with `!! ERROR: Cannot modify /etc/group or /etc/passwd (read-only root fs)`. Affects all users running standard Docker after upgrading to v0.50.295. **Fix:** replace `[ ! -w ]` with `! sudo sh -c 'test -w /etc/group && test -w /etc/passwd' 2>/dev/null` — matches the fact that `groupmod`/`usermod` already use sudo a few lines below. Truly read-only rootfs (podman) → sudo can't write → guard fires correctly. Writable rootfs (normal Docker) → sudo can write → guard doesn't fire → groupmod/usermod runs normally. **3 LOC `docker_init.bash` change.** P0 regression fix.
+
+- **OAuth Cancel during Codex device-token exchange now wins the race** (#1653 by @nesquena, follow-up to #1652 / refs #1362) — race in v0.50.296's Codex OAuth onboarding flow where a `POST /api/onboarding/oauth/cancel` arriving while the worker was mid-network-call would be silently overridden: credentials would still get persisted to `auth.json` and the flow status would flip from `cancelled` → `success`. Net effect: the user's explicit cancel was ignored, credentials persisted, UI reported success. **Fix:** re-check `_OAUTH_FLOWS[flow_id].status` under `_OAUTH_FLOWS_LOCK` immediately AFTER `_exchange_codex_authorization()` returns and BEFORE writing `auth.json`. If status is no longer `pending`, return cleanly — no persistence, no status overwrite. Behavioral test using `threading.Event` deterministically reproduces the race. UX-inconsistency severity, not a security bug (the credentials that get persisted ARE tokens the user authorized in their browser), but the cancel button stops doing what it says, violating the design intent of #1650's server-owned lifecycle.
+
+- **Persistent-host health diagnostics + watchdog hardening** (#1657 by @Michaelyklam, refs #1458) — addresses the residual #1458 Bug #3 failure mode (process alive + port listening but HTTP requests not advancing), the wedge that survives after v0.50.275's FD-leak fix and v0.50.269's bootstrap fix. Adds three signals process supervisors can use to distinguish "process exists" from "request handling is still advancing":
+  - **Accept-loop heartbeat**: `QuietHTTPServer.accept_loop_requests_total` + `accept_loop_last_request_at` instance attributes, incremented in `_handle_request_noblock()` (single `serve_forever()` thread, un-locked `+=` is safe). Surfaced in `/health` as `accept_loop: {requests_total, last_request_at}`.
+  - **`/health?deep=1` readiness probe**: bounded `STREAMS_LOCK.acquire(timeout=0.5)` + `all_sessions()` walk + `load_projects(_migrate=False)` + `sqlite3.connect(state.db) + PRAGMA schema_version`. Returns 503 with `status: degraded` when streams lock blocks or any deep check errors. Watchdogs polling `/health?deep=1` every 30s open-and-close 2880 short-lived sqlite connections per day per probe — bounded FD usage, no leak surface.
+  - **`RLIMIT_NOFILE` raise to 4096** at startup (best-effort, defense in depth for macOS launchd jobs that start at 256). Doesn't hide future FD leaks; gives diagnostic headroom before request handling falls over.
+  - **`docs/supervisor.md` updates**: launchd/systemd HTTP watchdog recipe using `curl -fsS --max-time 10 /health?deep=1` + `launchctl kickstart -k`. Notes `accept_loop.requests_total` should advance — if it stays flat while the process is alive, the accept loop is wedged.
+
+  Per Opus advisor on stage-297: refactored `_deep_health_checks(stream_check=...)` to accept the pre-computed stream check from `_handle_health()` so we don't acquire `STREAMS_LOCK` twice on the same `/health?deep=1` request (cosmetic inefficiency, not a correctness bug — but also could false-fail when the second acquire times out under contention). Plus a docstring note on `_handle_request_noblock` documenting why the un-locked `+=` is safe (single-thread-only call site in CPython socketserver).
+
+  PR #1656 by the same author (smaller, module-level globals approach) was closed as superseded by #1657 (instance-level + state.db check + projects check + supervisor.md docs).
+
+### Tests
+
+4284 → **4288 passing** (+4 regression tests across `tests/test_issue1458_stability_hardening.py` (3) + `tests/test_issue1362_codex_oauth_onboarding.py::test_cancel_during_token_exchange_does_not_persist_credentials` (1)). 0 regressions. Full suite ~118s.
+
+### Pre-release verification
+
+- **Opus advisor on stage-297 combined diff: SHIP verdict.** All 9 verification questions cleared:
+  - `_active_state_db_path()` verified at `api/models.py:924`, returns Path without opening connection
+  - 500ms `STREAMS_LOCK.acquire(timeout=...)` ceiling reasonable for watchdog timeouts (10s curl `--max-time` typical)
+  - `with closing(sqlite3.connect(...))` deterministically releases FD, `PRAGMA schema_version` is read-only
+  - `_handle_request_noblock` heartbeat increment is BEFORE super() — counter advances even if request handling raises, correct accept-loop semantics
+  - `_raise_fd_soft_limit()` correctly clamps to hard limit, only RAISES soft limit (won't lower below launchd's `LimitNOFILE` setting)
+  - OAuth fix narrows race window from "seconds-long network call" to "microseconds-long file write" — minimal correct change at the right layer
+  - Docker fix `sudo sh -c 'test -w'` correctly handles all 3 cases (writable+sudo / readonly+sudo / no-sudo)
+- **Two minor Opus follow-ups absorbed in-release**:
+  - `_deep_health_checks(stream_check=...)` reuses pre-computed stream check from `_handle_health()` — saves redundant lock acquisition
+  - Docstring note on `_handle_request_noblock` documenting single-thread safety of un-locked `+=`
+- **Self-built #1653** has thorough `threading.Event`-gated behavioral test demonstrating the race exists pre-fix and is fixed post-fix.
+- **Browser API sanity**: 11/11 endpoints OK on stage server.
+- **Conflict resolution**: zero file overlap across all 3 PRs (#1659 → docker_init.bash; #1653 → api/oauth.py; #1657 → api/routes.py + server.py + docs/supervisor.md). Auto-merged clean.
+
+### Authors
+
+- @bergeouss — 1 PR (#1659, AI-assisted via Hermes Agent) — fixing their own v0.50.295 #1635 regression
+- @nesquena (self-built) — 1 PR (#1653, follow-up to v0.50.296 #1652)
+- @Michaelyklam — 1 PR (#1657, hardening for #1458 Bug #3)
+
+### Note on closed-as-superseded
+
+PR #1656 (also @Michaelyklam) was closed as superseded by #1657. Both target #1458 Bug #3, both add accept-loop heartbeat + `/health?deep=1` + 503-on-degraded. #1657 adds beyond #1656: state.db connectivity check, projects state check, FD soft-limit raise, and `docs/supervisor.md` watchdog recipe. Same author iterated; the second PR was the keeper.
+
 ## [v0.50.296] — 2026-05-04
 
 ### Fixed (3 PRs — closes #1406, #1617; refs #1362)

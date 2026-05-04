@@ -111,6 +111,60 @@ def test_cancel_marks_flow_cancelled_and_poll_stops(tmp_path):
     assert polled["status"] == "cancelled"
 
 
+def test_cancel_during_token_exchange_does_not_persist_credentials(monkeypatch, tmp_path):
+    """Cancel arriving while the worker is mid-network-call must win.
+
+    Without the post-exchange status re-check, the worker would proceed to
+    persist credentials to auth.json AND override the cancelled status with
+    "success" — silently storing tokens the user explicitly aborted.
+    """
+    import threading
+    import api.oauth as oauth
+
+    oauth._OAUTH_FLOWS.clear()
+
+    poll_started = threading.Event()
+    poll_continue = threading.Event()
+
+    def _slow_poll(device_auth_id, user_code):
+        poll_started.set()
+        assert poll_continue.wait(timeout=5)
+        return {"authorization_code": "auth-code", "code_verifier": "verifier"}
+
+    def _exchange(authorization_code, code_verifier):
+        return {"access_token": "ACCESS", "refresh_token": "REFRESH"}
+
+    monkeypatch.setattr(oauth, "_poll_codex_authorization", _slow_poll)
+    monkeypatch.setattr(oauth, "_exchange_codex_authorization", _exchange)
+
+    flow_id = "race-flow"
+    oauth._OAUTH_FLOWS[flow_id] = {
+        "provider": "openai-codex",
+        "status": "pending",
+        "device_auth_id": "device-secret",
+        "user_code": "ABCD-EFGH",
+        "expires_at": time.time() + 600,
+        "poll_interval_seconds": 1,
+        "hermes_home": str(tmp_path),
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+
+    worker = threading.Thread(target=oauth._run_codex_oauth_worker, args=(flow_id,), daemon=True)
+    worker.start()
+    assert poll_started.wait(timeout=5)
+
+    oauth.cancel_onboarding_oauth_flow({"flow_id": flow_id})
+    assert oauth._OAUTH_FLOWS[flow_id]["status"] == "cancelled"
+
+    poll_continue.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+
+    assert oauth._OAUTH_FLOWS[flow_id]["status"] == "cancelled"
+    assert not (tmp_path / "auth.json").exists()
+
+
 def test_expired_flow_reports_expired_and_drops_sensitive_lifecycle(tmp_path):
     import api.oauth as oauth
 

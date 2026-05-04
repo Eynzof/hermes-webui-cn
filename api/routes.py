@@ -12,6 +12,7 @@ import queue
 import re
 import platform
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -19,6 +20,7 @@ import time
 import uuid
 import re
 from pathlib import Path
+from contextlib import closing
 from urllib.parse import parse_qs
 from api.agent_sessions import MESSAGING_SOURCES
 
@@ -1222,6 +1224,7 @@ from api.models import (
     title_from,
     _write_session_index,
     SESSION_INDEX_FILE,
+    _active_state_db_path,
     load_projects,
     save_projects,
     import_cli_session,
@@ -1658,6 +1661,135 @@ def _handle_insights(handler, parsed) -> bool:
 # ── GET routes ────────────────────────────────────────────────────────────────
 
 
+def _accept_loop_health(handler) -> dict:
+    server = getattr(handler, "server", None)
+    return {
+        "requests_total": int(getattr(server, "accept_loop_requests_total", 0) or 0),
+        "last_request_at": round(float(getattr(server, "accept_loop_last_request_at", 0.0) or 0.0), 3),
+    }
+
+
+def _streams_lock_health(timeout_seconds: float = 0.5) -> dict:
+    t0 = time.time()
+    acquired = STREAMS_LOCK.acquire(timeout=timeout_seconds)
+    elapsed_ms = round((time.time() - t0) * 1000, 1)
+    if not acquired:
+        return {
+            "status": "blocked",
+            "timeout_seconds": timeout_seconds,
+            "ms": elapsed_ms,
+        }
+    try:
+        return {
+            "status": "ok",
+            "active_streams": len(STREAMS),
+            "ms": elapsed_ms,
+        }
+    finally:
+        STREAMS_LOCK.release()
+
+
+def _deep_health_checks(stream_check: dict | None = None) -> tuple[dict, bool]:
+    """Run cheap probes that exercise the state paths used by the UI shell.
+
+    Plain /health intentionally stays tiny. /health?deep=1 is for supervisors
+    and watchdogs that need to know whether the process can still touch the
+    shared stream map, sidebar/session path, project state, and Hermes state.db
+    without hitting the RST-before-write failure mode from #1458.
+
+    `stream_check` is the result from a prior `_streams_lock_health()` call;
+    if provided, it's reused so we don't acquire `STREAMS_LOCK` twice on the
+    same /health?deep=1 request (per Opus advisor on stage-297).
+    """
+    checks: dict[str, dict] = {}
+
+    checks["streams_lock"] = stream_check if stream_check is not None else _streams_lock_health()
+    if checks["streams_lock"].get("status") != "ok":
+        return checks, False
+
+    t0 = time.time()
+    try:
+        sessions = all_sessions()
+        checks["sessions"] = {
+            "status": "ok",
+            "count": len(sessions),
+            "ms": round((time.time() - t0) * 1000, 1),
+        }
+    except Exception as exc:
+        checks["sessions"] = {
+            "status": "error",
+            "error": type(exc).__name__,
+            "ms": round((time.time() - t0) * 1000, 1),
+        }
+
+    t0 = time.time()
+    try:
+        projects = load_projects(_migrate=False)
+        checks["projects"] = {
+            "status": "ok",
+            "count": len(projects),
+            "ms": round((time.time() - t0) * 1000, 1),
+        }
+    except Exception as exc:
+        checks["projects"] = {
+            "status": "error",
+            "error": type(exc).__name__,
+            "ms": round((time.time() - t0) * 1000, 1),
+        }
+
+    t0 = time.time()
+    try:
+        db_path = _active_state_db_path()
+        if not db_path.exists():
+            checks["state_db"] = {
+                "status": "missing",
+                "ms": round((time.time() - t0) * 1000, 1),
+            }
+        else:
+            with closing(sqlite3.connect(str(db_path))) as conn:
+                conn.execute("PRAGMA schema_version").fetchone()
+            checks["state_db"] = {
+                "status": "ok",
+                "ms": round((time.time() - t0) * 1000, 1),
+            }
+    except Exception as exc:
+        checks["state_db"] = {
+            "status": "error",
+            "error": type(exc).__name__,
+            "ms": round((time.time() - t0) * 1000, 1),
+        }
+
+    healthy = all(
+        check.get("status") in {"ok", "missing"}
+        for check in checks.values()
+    )
+    return checks, healthy
+
+
+def _handle_health(handler, parsed):
+    deep = parse_qs(parsed.query or "").get("deep", [""])[0].lower() in {"1", "true", "yes", "on"}
+    stream_check = _streams_lock_health()
+    payload = {
+        "status": "ok" if stream_check.get("status") == "ok" else "degraded",
+        "sessions": len(SESSIONS),
+        "active_streams": int(stream_check.get("active_streams") or 0),
+        "uptime_seconds": round(time.time() - SERVER_START_TIME, 1),
+        "accept_loop": _accept_loop_health(handler),
+    }
+    if deep:
+        if stream_check.get("status") != "ok":
+            payload["checks"] = {"streams_lock": stream_check}
+            return j(handler, payload, status=503)
+        checks, healthy = _deep_health_checks(stream_check=stream_check)
+        payload["checks"] = checks
+        if not healthy:
+            payload["status"] = "degraded"
+            return j(handler, payload, status=503)
+    if payload["status"] != "ok":
+        return j(handler, payload, status=503)
+    return j(handler, payload)
+
+
 def handle_get(handler, parsed) -> bool:
     """Handle all GET routes. Returns True if handled, False for 404."""
 
@@ -1776,17 +1908,7 @@ def handle_get(handler, parsed) -> bool:
         return _handle_insights(handler, parsed)
 
     if parsed.path == "/health":
-        with STREAMS_LOCK:
-            n_streams = len(STREAMS)
-        return j(
-            handler,
-            {
-                "status": "ok",
-                "sessions": len(SESSIONS),
-                "active_streams": n_streams,
-                "uptime_seconds": round(time.time() - SERVER_START_TIME, 1),
-            },
-        )
+        return _handle_health(handler, parsed)
 
     if parsed.path == "/api/models":
         return j(handler, get_available_models())

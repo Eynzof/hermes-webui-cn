@@ -9,6 +9,11 @@ import sys
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - resource is Unix-only
+    resource = None
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -26,6 +31,28 @@ class QuietHTTPServer(ThreadingHTTPServer):
     """Custom HTTP server that silently handles common network errors."""
     daemon_threads = True
     request_queue_size = 64
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.accept_loop_requests_total = 0
+        self.accept_loop_last_request_at = 0.0
+
+    def _handle_request_noblock(self):
+        """Record accept-loop progress before dispatching a request handler.
+
+        A process can be alive and still stop accepting/dispatching requests.
+        Exposing this heartbeat on /health gives supervisors and watchdogs a
+        cheap signal that the accept loop is still moving.
+
+        Note: this method is called only from the single ``serve_forever()``
+        thread in CPython socketserver, so the un-locked ``+=`` increment is
+        safe — there is no other thread mutating these counters. The /health
+        readers may see a stale value momentarily but never an inconsistent
+        one (Python int reads are atomic). Per Opus advisor on stage-297.
+        """
+        self.accept_loop_requests_total += 1
+        self.accept_loop_last_request_at = time.time()
+        return super()._handle_request_noblock()
     
     def handle_error(self, request, client_address):
         """Override to suppress logging for common client disconnect errors."""
@@ -129,10 +156,49 @@ class Handler(BaseHTTPRequestHandler):
             clear_request_profile()
 
 
+def _raise_fd_soft_limit(target: int = 4096) -> dict:
+    """Best-effort raise of RLIMIT_NOFILE for persistent WebUI hosts.
+
+    macOS launchd jobs often start with a 256 soft limit. If a future FD leak
+    regresses, that low ceiling turns a leak into a hard HTTP wedge quickly.
+    Raising the soft limit does not hide leaks; it buys enough headroom for
+    diagnostics and watchdog recovery.
+    """
+    if resource is None:
+        return {"status": "unsupported"}
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+    # On Unix, RLIM_INFINITY is commonly a large int; keep the logic explicit
+    # so tests can use ordinary integers without depending on platform values.
+    desired = int(target)
+    if hard not in (-1, getattr(resource, "RLIM_INFINITY", object())):
+        desired = min(desired, int(hard))
+    if soft >= desired:
+        return {"status": "unchanged", "soft": soft, "hard": hard}
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (desired, hard))
+    except Exception as exc:
+        return {"status": "error", "soft": soft, "hard": hard, "error": str(exc)}
+    return {"status": "raised", "soft": desired, "hard": hard, "previous_soft": soft}
+
+
 def main() -> None:
     from api.config import print_startup_config, verify_hermes_imports, _HERMES_FOUND
 
     print_startup_config()
+
+    fd_limit = _raise_fd_soft_limit()
+    if fd_limit.get("status") == "raised":
+        print(
+            f"[ok] Raised file descriptor soft limit "
+            f"{fd_limit.get('previous_soft')} -> {fd_limit.get('soft')}",
+            flush=True,
+        )
+    elif fd_limit.get("status") == "error":
+        print(f"[!!] WARNING: Could not raise file descriptor limit: {fd_limit.get('error')}", flush=True)
 
     # Fix sensitive file permissions before doing anything else
     fix_credential_permissions()
