@@ -629,18 +629,26 @@ def _apply_core_sync_or_error_marker(
     # prompt submitted just before a server restart, so materialize it before
     # clearing runtime stream state.
     if len(session.messages) != 0:
+        _pending_text = " ".join(str(session.pending_user_message or "").split())
+        _already_checkpointed = False
+        if _pending_text and session.messages:
+            _last_msg = session.messages[-1]
+            if isinstance(_last_msg, dict) and _last_msg.get('role') == 'user':
+                _last_text = " ".join(str(_last_msg.get('content') or "").split())
+                _already_checkpointed = _last_text == _pending_text
         _recovered_ts = int(time.time())
         if isinstance(session.pending_started_at, (int, float)) and session.pending_started_at > 0:
             _recovered_ts = int(session.pending_started_at)
-        recovered = {
-            'role': 'user',
-            'content': session.pending_user_message,
-            'timestamp': _recovered_ts,
-            '_recovered': True,
-        }
-        if session.pending_attachments:
-            recovered['attachments'] = list(session.pending_attachments)
-        session.messages.append(recovered)
+        if not _already_checkpointed:
+            recovered = {
+                'role': 'user',
+                'content': session.pending_user_message,
+                'timestamp': _recovered_ts,
+                '_recovered': True,
+            }
+            if session.pending_attachments:
+                recovered['attachments'] = list(session.pending_attachments)
+            session.messages.append(recovered)
         session.active_stream_id = None
         session.pending_user_message = None
         session.pending_attachments = []

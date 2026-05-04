@@ -1164,6 +1164,17 @@ def _find_current_user_turn(messages, msg_text):
     return fallback
 
 
+def _drop_checkpointed_current_user_from_context(messages, msg_text):
+    """Return model history without an eager-checkpointed current user turn."""
+    history = list(messages or [])
+    if not history:
+        return history
+    current_user_key = _message_identity({'role': 'user', 'content': msg_text})
+    if current_user_key and _message_identity(history[-1]) == current_user_key:
+        return history[:-1]
+    return history
+
+
 def _merge_display_messages_after_agent_result(previous_display, previous_context, result_messages, msg_text):
     """Keep UI transcript durable while allowing model context to compact.
 
@@ -1191,8 +1202,20 @@ def _merge_display_messages_after_agent_result(previous_display, previous_contex
 
     merged = previous_display[:]
     seen = {_message_identity(m) for m in merged}
+    current_user_key = _message_identity({'role': 'user', 'content': msg_text})
     for msg in candidates:
         key = _message_identity(msg)
+        if (
+            key is not None
+            and key == current_user_key
+            and merged
+            and _message_identity(merged[-1]) == key
+        ):
+            # Eager session-save mode can checkpoint the current user turn
+            # before the agent runs. When the agent returns that same user turn
+            # in result_messages, keep the durable checkpoint and append only
+            # the assistant/tool delta.
+            continue
         if _is_context_compression_marker(msg) and key is not None and key in seen:
             continue
         merged.append(copy.deepcopy(msg))
@@ -1620,9 +1643,11 @@ def _run_agent_streaming(
             _reasoning_text = ''  # accumulates reasoning/thinking trace for persistence
             _live_tool_calls = []  # tool progress fallback when final messages omit tool IDs
 
-            # Throttle: emit metering events at most every 100 ms so the TPS label
-            # feels live during fast token streams without flooding the SSE channel.
+            # Throttle: emit metering events at most every 100 ms so the per-message
+            # TPS label feels live during fast token streams without flooding SSE.
             _metering_last_emit = [time.monotonic() - 1]  # fire immediately on first token
+            _metering_output_deltas = [0]
+            _metering_reasoning_deltas = [0]
 
             def _emit_metering():
                 now = time.monotonic()
@@ -1631,6 +1656,8 @@ def _run_agent_streaming(
                 _metering_last_emit[0] = now
                 stats = meter().get_stats()
                 stats['session_id'] = stream_id
+                stats.setdefault('tps_available', False)
+                stats.setdefault('estimated', False)
                 put('metering', stats)
 
             def on_token(text):
@@ -1642,8 +1669,11 @@ def _run_agent_streaming(
                 if stream_id in STREAM_PARTIAL_TEXT:
                     STREAM_PARTIAL_TEXT[stream_id] += str(text)
                 put('token', {'text': text})
-                # Update global throughput meter
-                meter().record_token(stream_id, len(STREAM_PARTIAL_TEXT[stream_id]))
+                # Update live throughput from stream delta callbacks, not from
+                # byte/character length. If a backend cannot provide live deltas,
+                # the frontend hides TPS rather than showing an estimate.
+                _metering_output_deltas[0] += 1
+                meter().record_token(stream_id, _metering_output_deltas[0])
                 _emit_metering()
 
             def on_reasoning(text):
@@ -1655,8 +1685,9 @@ def _run_agent_streaming(
                 if stream_id in STREAM_REASONING_TEXT:
                     STREAM_REASONING_TEXT[stream_id] += str(text)
                 put('reasoning', {'text': str(text)})
-                # Track reasoning tokens in the meter so TPS reflects all AI output
-                meter().record_reasoning(stream_id, len(_reasoning_text))
+                # Track reasoning deltas in the meter so live TPS reflects all AI output.
+                _metering_reasoning_deltas[0] += 1
+                meter().record_reasoning(stream_id, _metering_reasoning_deltas[0])
                 _emit_metering()
 
             # Pre-initialise the activity counter here so on_tool (which
@@ -1690,7 +1721,8 @@ def _run_agent_streaming(
                         if stream_id in STREAM_REASONING_TEXT:
                             STREAM_REASONING_TEXT[stream_id] += str(reason_text)
                         put('reasoning', {'text': str(reason_text)})
-                        meter().record_reasoning(stream_id, len(_reasoning_text))
+                        _metering_reasoning_deltas[0] += 1
+                        meter().record_reasoning(stream_id, _metering_reasoning_deltas[0])
                         _emit_metering()
                     return
 
@@ -2059,7 +2091,10 @@ def _run_agent_streaming(
             # Truthy-check covers None, missing-attr, and 0 uniformly.
             _turn_started_at = _pending_started_at if _pending_started_at else time.time()
             _previous_messages = list(s.messages or [])
-            _previous_context_messages = list(_session_context_messages(s))
+            _previous_context_messages = _drop_checkpointed_current_user_from_context(
+                _session_context_messages(s),
+                msg_text,
+            )
             _pre_compression_count = getattr(
                 getattr(agent, 'context_compressor', None),
                 'compression_count', 0,
@@ -2459,10 +2494,15 @@ def _run_agent_streaming(
                     _turn_duration_seconds = max(0.0, time.time() - float(_turn_started_at))
                 except Exception:
                     _turn_duration_seconds = 0.0
+                _turn_tps = None
+                if output_tokens and _turn_duration_seconds > 0:
+                    _turn_tps = round(float(output_tokens) / _turn_duration_seconds, 1)
                 if s.messages:
                     for _dm in reversed(s.messages):
                         if isinstance(_dm, dict) and _dm.get('role') == 'assistant':
                             _dm['_turnDuration'] = round(_turn_duration_seconds, 3)
+                            if _turn_tps is not None:
+                                _dm['_turnTps'] = _turn_tps
                             break
                 # Persist context window data on the session so the context-ring
                 # indicator survives a page reload (#1318). Must run BEFORE
@@ -2517,6 +2557,8 @@ def _run_agent_streaming(
                 'estimated_cost': estimated_cost,
                 'duration_seconds': round(_turn_duration_seconds, 3),
             }
+            if _turn_tps is not None:
+                usage['tps'] = _turn_tps
             # Include context window data from the agent's compressor for the UI indicator.
             # The session-level persistence happens above (before s.save()) so the values
             # survive a page reload; this block only populates the live SSE usage payload.
@@ -2567,9 +2609,11 @@ def _run_agent_streaming(
                 logger.debug("Failed to drain pending steer for session %s", session_id)
             raw_session = s.compact() | {'messages': s.messages, 'tool_calls': tool_calls}
             put('done', {'session': redact_session_data(raw_session), 'usage': usage})
-            # Emit metering stats for the header TPS label
+            # Emit one last metering packet for the live message-header TPS label.
             meter_stats = meter().get_stats()
             meter_stats['session_id'] = session_id
+            meter_stats.setdefault('tps_available', False)
+            meter_stats.setdefault('estimated', False)
             put('metering', meter_stats)
             if _should_bg_title and _u0 and _a0:
                 threading.Thread(

@@ -1,5 +1,41 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.296] — 2026-05-04
+
+### Fixed (3 PRs — closes #1406, #1617; refs #1362)
+
+- **Per-turn TPS now visible in assistant message headers (default-off, opt-in via Preferences)** (#1640 by @Michaelyklam, closes #1617) — UX gate **APPROVED by @aronprins** with default-off + opt-in setting addition. Previously `_turnTps` calculation existed in `api/streaming.py` but was rendered into a global titlebar `tpsStat` element that's been hidden by default since v0.50.x. New `show_tps` boolean setting in Preferences (default `false`) renders an inline `.msg-tps-inline` chip in each assistant message header when enabled. Useful for power users tuning local-model setups (LM Studio, Ollama, llama.cpp, vLLM) where TPS varies turn-to-turn based on context length, parallel slots, and prompt complexity. **Backend changes:** `api/metering.py` adds explicit `tps_available` field (boolean — strict, requires both real exact token count AND backend-measured turn duration), drops placeholder `0.0` TPS when no real reading exists, switches live counting from character-count-derived text length to streaming-callback deltas. Final `_turnTps` computed from exact final output token usage divided by backend-measured turn duration when both available, persisted on assistant message and sent in `done` payload only when both signals available. **Hot-apply:** Preferences autosave updates `window._showTps` global, clears the message render cache, and re-renders messages — toggling the setting reflects in open tabs without refresh. UI evidence under `docs/pr-media/1640/` showing default-off transcript, hot-apply with TPS visible, and the Settings → Preferences toggle.
+
+- **Operator-level config knob for first-turn session save timing** (#1648 by @Michaelyklam, closes #1406) — operators wanting crash-resilience for the user's first prompt (vs accepting the first prompt being in-memory-only until streaming begins) now have a `webui.session_save_mode` config.yaml knob with values `deferred` (default — preserves the v0.50.230 fix for #1171 orphan-Untitled files) and `eager`. **Eager mode** materializes the user message into `s.messages` before launching the agent thread, plus updates `_apply_core_sync_or_error_marker` (WAL/repair path) and the streaming-thread context-build path (`_drop_checkpointed_current_user_from_context`) to avoid double-counting the user turn. Implementation matches @nesquena-hermes's prescribed shape from #1406's maintainer comment 1:1 — no Settings UI toggle (operator-level only), default stays deferred (orphan-Untitled hygiene preserved), threshold is "≥1 user message" not "did `new_session()` get called" (so empty-new-chat-then-switch-away doesn't recreate the orphan-file class). Validated `_WEBUI_SESSION_SAVE_MODES = {"deferred", "eager"}`; unknown values fail closed to `deferred`. 132-LOC test file covering both modes + WAL/repair interaction + duplicate-context filtering.
+
+- **In-app OAuth onboarding flow for OpenAI Codex** (#1650 by @Michaelyklam, refs #1362) — three new endpoints: `POST /api/onboarding/oauth/start` (initiates the device-code flow), `GET /api/onboarding/oauth/poll?flow_id=...` (returns high-level status: `pending|success|expired|cancelled|error`), `POST /api/onboarding/oauth/cancel` (aborts an in-flight flow). **Server-owned lifecycle:** all sensitive provider state (device_auth_id, code_verifier, authorization_code, access_token, refresh_token, token_data) lives in a process-local `_OAUTH_FLOWS` dict keyed by an opaque WebUI-local `flow_id` (UUID4). Browser only sees `flow_id`, `user_code`, `verification_uri`, status — never raw OAuth lifecycle secrets. 15-minute flow timeout. **Token persistence:** successful Codex credentials write to the **active profile's** `auth.json` `credential_pool.openai-codex` (atomic tmp+rename, chmod 0o600 on tmp BEFORE rename so final file never has world-readable window, defense-in-depth post-rename chmod). Allowlist `_ALLOWED_ONBOARDING_OAUTH_PROVIDERS = {"openai-codex"}`; explicit blocklist for anthropic/claude/nous/qwen/gemini/minimax/copilot (rejected with generic "Only OpenAI Codex OAuth is supported in WebUI onboarding right now" — no internal triage state leaked). Implementation matches @nesquena-hermes's prescribed shape from #1362's maintainer comment 1:1 (server-owned state machine, no client-side device codes, abort endpoint, profile-scoped storage, opt-in). Updated `static/onboarding.js` for the `openai-codex` OAuth-pending path with clickable verification URL, prominent user code with copy-to-clipboard, abort button. Updated Codex auth endpoints to current Hermes Agent Codex protocol: `https://auth.openai.com/api/accounts/deviceauth/usercode`, `.../api/accounts/deviceauth/token`, `.../oauth/token`. 182-LOC test file covering route shape, secret-leak prevention, allowlist, expiration, cancellation, profile-scoped credential write, frontend endpoint usage, and the unsupported-provider note copy update. **First step on the #1362 sprint roadmap** — Anthropic Claude OAuth is the planned v2.
+
+### Tests
+
+4255 → **4284 passing** (+29 regression tests across `tests/test_issue1617_tps_message_header.py` (31), `tests/test_session_save_mode.py` (~13 new + edits), `tests/test_issue1362_codex_oauth_onboarding.py` (9), plus existing test updates for context-window-persistence, preferences-autosave). 0 regressions. Full suite ~120s.
+
+### Pre-release verification
+
+- **Opus advisor on stage-296 combined diff: SHIP verdict.** All 14 verification questions cleared, with focused OAuth security audit on #1650 (in-memory flow lifecycle correct, lock not held during network IO, no flow_id leakage path, allowlist fail-closed, chmod-before-rename correctly implemented per the prior security-fix pattern, sensitive fields scrubbed on every terminal status transition, no internal triage state in error messages). Two minor follow-ups absorbed in-release per <20-LOC defensive policy:
+  - `_get_active_hermes_home()` exception fallback now logs a `logger.warning(...)` so silent profile-corruption fallback is observable in logs.
+  - Codex credential pool find-loop now accepts both `source == "manual:device_code"` (current code) AND `source == "oauth_device"` (legacy from prior Codex OAuth implementations) so users with prior creds get their entry updated in-place rather than accumulating a stale duplicate pool entry.
+- **#1640 has @aronprins UX-gate APPROVED** (May 04 19:24 UTC) after a tighten request landed (default-off setting + Settings → Preferences toggle, hot-applied without refresh).
+- **#1648 implements @nesquena-hermes's prescribed shape** from the #1406 maintainer comment 1:1.
+- **#1650 implements @nesquena-hermes's prescribed shape** from the #1362 maintainer comment 1:1, with explicit security-audit alignment (server-owned device codes, opaque flow_id, profile-scoped storage, blocklist for known-OAuth providers awaiting v2).
+- **JS syntax**: 5 modified `.js` files (`boot.js`, `messages.js`, `onboarding.js`, `panels.js`, `ui.js`) clean.
+- **Browser API sanity**: 11/11 endpoints OK on stage server.
+- **Conflict resolution**: clean auto-merge across all 3 PRs (rebased #1640 onto current master from 10-commits-behind base; #1648 + #1650 already on current master; no overlapping code regions across the 3 PRs in `api/streaming.py`, `api/routes.py`, or `static/`).
+
+### Authors
+
+- @Michaelyklam — 3 PRs (#1640, #1648, #1650)
+
+@Michaelyklam continues the strong contribution pattern from #1597, #1598, #1600, #1601, #1621, #1637 — this is now 9 merged PRs across the v0.50.292-296 release window.
+
+### Trust boundary note
+
+This release ships the first user-facing OAuth flow in the WebUI. Token storage path, atomic write semantics, chmod timing, server-side flow state, and the allowlist/blocklist pattern are all in scope for security reviewers reviewing v0.50.296. The Hermes Agent CLI's `auth.json` format is the source-of-truth contract — both the WebUI and CLI write the same `credential_pool.openai-codex` shape, so credentials added via either surface are usable by either surface.
+
 ## [v0.50.295] — 2026-05-04
 
 ### Fixed (3 PRs — closes #1360, #1451, #1463, #1618, #1619)

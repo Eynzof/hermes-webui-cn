@@ -392,6 +392,7 @@ from api.config import (
     set_reasoning_display,
     set_reasoning_effort,
     create_stream_channel,
+    get_webui_session_save_mode,
 )
 from api.helpers import (
     require,
@@ -1251,6 +1252,11 @@ from api.onboarding import (
     get_onboarding_status,
     complete_onboarding,
     probe_provider_endpoint,
+)
+from api.oauth import (
+    cancel_onboarding_oauth_flow,
+    poll_onboarding_oauth_flow,
+    start_onboarding_oauth_flow,
 )
 
 # Approval system (optional -- graceful fallback if agent not available)
@@ -2279,38 +2285,19 @@ def handle_get(handler, parsed) -> bool:
             return j(handler, {"error": "not found"}, status=404)
         return _handle_clarify_inject(handler, parsed)
 
-    # ── OAuth (Codex device-code) ──
-    if parsed.path == "/api/oauth/codex/start":
-        """Start Codex device-code OAuth flow. Returns user_code + verification_uri."""
-        try:
-            from api.oauth import start_codex_device_code
-            result = start_codex_device_code()
-            return j(handler, result)
-        except Exception as e:
-            return j(handler, {"error": str(e)}, status=500)
-
-    if parsed.path == "/api/oauth/codex/poll":
-        """SSE endpoint for polling Codex OAuth token."""
+    if parsed.path == "/api/onboarding/oauth/poll":
         qs = parse_qs(parsed.query)
-        device_code = qs.get("device_code", [""])[0]
-        if not device_code:
-            return j(handler, {"error": "device_code required"}, status=400)
-        handler.send_response(200)
-        handler.send_header("Content-Type", "text/event-stream")
-        handler.send_header("Cache-Control", "no-cache")
-        handler.send_header("Connection", "keep-alive")
-        handler.end_headers()
+        flow_id = qs.get("flow_id", [""])[0]
         try:
-            from api.oauth import poll_codex_token
-            for event in poll_codex_token(device_code):
-                handler.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
-                handler.wfile.flush()
-                if event.get("status") in ("success", "error"):
-                    break
-        except Exception as e:
-            handler.wfile.write(f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n".encode())
-            handler.wfile.flush()
-        return  # SSE handled, no JSON response
+            return j(
+                handler,
+                poll_onboarding_oauth_flow(flow_id),
+                extra_headers={"Cache-Control": "no-store"},
+            )
+        except ValueError as e:
+            return bad(handler, str(e))
+        except KeyError as e:
+            return bad(handler, str(e), 404)
 
     # ── Cron API (GET) ──
     # All cron handlers touch cron.jobs which resolves HERMES_HOME from
@@ -3279,6 +3266,34 @@ def handle_post(handler, parsed) -> bool:
         handler.end_headers()
         handler.wfile.write(response_body)
         return True
+
+    if parsed.path == "/api/onboarding/oauth/start":
+        from api.auth import is_auth_enabled
+        import os as _os
+        if not is_auth_enabled() and not _os.getenv("HERMES_WEBUI_ONBOARDING_OPEN"):
+            import ipaddress
+            try:
+                _xff = handler.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                _xri = handler.headers.get("X-Real-IP", "").strip()
+                _raw = handler.client_address[0]
+                addr = ipaddress.ip_address(_xff or _xri or _raw)
+                is_local = addr.is_loopback or addr.is_private
+            except ValueError:
+                is_local = False
+            if not is_local:
+                return bad(handler, "Onboarding OAuth is only available from local networks when auth is not enabled. To bypass this on a remote server, set HERMES_WEBUI_ONBOARDING_OPEN=1.", 403)
+        try:
+            return j(handler, start_onboarding_oauth_flow(body), extra_headers={"Cache-Control": "no-store"})
+        except ValueError as e:
+            return bad(handler, str(e))
+        except RuntimeError as e:
+            return bad(handler, str(e), 500)
+
+    if parsed.path == "/api/onboarding/oauth/cancel":
+        try:
+            return j(handler, cancel_onboarding_oauth_flow(body), extra_headers={"Cache-Control": "no-store"})
+        except ValueError as e:
+            return bad(handler, str(e))
 
     if parsed.path == "/api/onboarding/setup":
         # Writing API keys to disk - restrict to local/private networks unless auth is active.
@@ -5056,6 +5071,68 @@ def _handle_background(handler, body):
     return j(handler, {"task_id": task_id, "stream_id": stream_id, "session_id": bg.session_id})
 
 
+def _checkpoint_user_message_for_eager_session_save(s, msg: str, attachments, started_at: float | None) -> None:
+    """Materialize the current user turn for eager first-turn persistence.
+
+    The streaming thread still receives ``pending_user_message`` so existing
+    cancel/recovery/final-merge paths keep their current contract. Eager mode
+    only adds a durable display-message checkpoint before the agent launches.
+    """
+    if not msg:
+        return
+    existing = list(getattr(s, "messages", None) or [])
+    if existing:
+        latest = existing[-1]
+        if isinstance(latest, dict) and latest.get("role") == "user":
+            latest_text = " ".join(str(latest.get("content") or "").split())
+            msg_text = " ".join(str(msg or "").split())
+            if latest_text == msg_text:
+                return
+    user_msg = {"role": "user", "content": msg}
+    if isinstance(started_at, (int, float)) and started_at > 0:
+        user_msg["timestamp"] = int(started_at)
+    if attachments:
+        user_msg["attachments"] = list(attachments)
+    s.messages.append(user_msg)
+
+
+def _prepare_chat_start_session_for_stream(
+    s,
+    *,
+    msg: str,
+    attachments,
+    workspace: str,
+    model: str,
+    model_provider,
+    stream_id: str,
+    started_at: float | None = None,
+):
+    """Persist chat-start state according to webui.session_save_mode.
+
+    ``deferred`` keeps the existing sidecar/WAL-backed behaviour: save pending
+    fields but leave the display transcript empty until the agent merges the
+    result. ``eager`` additionally writes the current user turn into messages so
+    a process restart immediately after /api/chat/start preserves the prompt as
+    a normal session message. Empty sessions are never saved here because this
+    helper only runs after a non-empty message is validated.
+    """
+    s.workspace = workspace
+    s.model = model
+    s.model_provider = model_provider
+    s.active_stream_id = stream_id
+    s.pending_user_message = msg
+    s.pending_attachments = attachments
+    s.pending_started_at = started_at if started_at is not None else time.time()
+    if get_webui_session_save_mode() == "eager":
+        _checkpoint_user_message_for_eager_session_save(
+            s,
+            msg,
+            attachments,
+            s.pending_started_at,
+        )
+    s.save()
+
+
 def _handle_chat_start(handler, body):
     try:
         require(body, "session_id")
@@ -5103,14 +5180,15 @@ def _handle_chat_start(handler, body):
         _clear_stale_stream_state(s)
     stream_id = uuid.uuid4().hex
     with _get_session_agent_lock(s.session_id):
-        s.workspace = workspace
-        s.model = model
-        s.model_provider = model_provider
-        s.active_stream_id = stream_id
-        s.pending_user_message = msg
-        s.pending_attachments = attachments
-        s.pending_started_at = time.time()
-        s.save()
+        _prepare_chat_start_session_for_stream(
+            s,
+            msg=msg,
+            attachments=attachments,
+            workspace=workspace,
+            model=model,
+            model_provider=model_provider,
+            stream_id=stream_id,
+        )
     set_last_workspace(workspace)
     stream = create_stream_channel()
     with STREAMS_LOCK:
