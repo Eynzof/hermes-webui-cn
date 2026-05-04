@@ -61,7 +61,15 @@ def _get_active_hermes_home() -> Path:
         from api.profiles import get_active_hermes_home
 
         return Path(get_active_hermes_home())
-    except Exception:
+    except Exception as exc:
+        # Per Opus advisor on stage-296: log the silent fallback so a corrupt
+        # profile state ending up writing tokens to ~/.hermes (instead of the
+        # active profile) is observable in logs rather than failing silently.
+        logger.warning(
+            "Falling back to ~/.hermes for OAuth credential storage: "
+            "active-profile resolution failed: %s",
+            exc,
+        )
         return Path.home() / ".hermes"
 
 
@@ -139,8 +147,14 @@ def _persist_codex_credentials(hermes_home: Path, token_data: dict[str, Any]) ->
 
     now = _now_iso()
     entry = None
+    # Per Opus advisor on stage-296: also accept the legacy `source ==
+    # "oauth_device"` value so users with prior Codex OAuth credentials
+    # (written by older WebUI versions before this PR's source-key change)
+    # get their existing entry updated in-place rather than accumulating a
+    # stale duplicate pool entry.
+    _accept_sources = {"manual:device_code", "oauth_device"}
     for candidate in entries:
-        if isinstance(candidate, dict) and candidate.get("source") == "manual:device_code":
+        if isinstance(candidate, dict) and candidate.get("source") in _accept_sources:
             entry = candidate
             break
     if entry is None:
