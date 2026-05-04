@@ -71,13 +71,10 @@ def test_is_root_profile_invalidation_drops_stale(monkeypatch):
     """Explicit invalidation forces re-query on next call."""
     import api.profiles as p
 
-    states = [
+    seq = [
         [{'name': 'kinni', 'is_default': True, 'path': '/tmp/.hermes'}],
         [{'name': 'noblepro', 'is_default': True, 'path': '/tmp/.hermes'}],
     ]
-    monkeypatch.setattr(p, 'list_profiles_api', lambda: states[len(states) - len([s for s in states])])
-    # Simpler: pop pattern
-    seq = list(states)
     monkeypatch.setattr(p, 'list_profiles_api', lambda: seq[0] if seq else [])
 
     p._invalidate_root_profile_cache()

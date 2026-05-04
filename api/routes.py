@@ -2050,13 +2050,20 @@ def handle_get(handler, parsed) -> bool:
             key=lambda s: s.get("last_message_at") or s.get("updated_at", 0) or 0,
             reverse=True,
         )
-        merged = _keep_latest_messaging_session_per_source(merged)
         # ── Profile scoping (#1611) ────────────────────────────────────────
         # Default: filter to the active profile. ?all_profiles=1 opts into
         # the aggregate view used by the "All profiles" sidebar toggle.
         # The other_profile_count is always returned so the UI can render
         # the "Show N from other profiles" affordance without sending the
         # cross-profile rows by default.
+        #
+        # IMPORTANT: scope BEFORE _keep_latest_messaging_session_per_source.
+        # _messaging_source_key is profile-blind (#1614 follow-up): if the
+        # same Slack/Telegram identity has sessions in profiles A and B, a
+        # profile-blind dedupe would discard the older one even when scoped
+        # to its own profile, leaving that profile with zero rows for that
+        # source. Filter first so the dedupe operates only within the active
+        # profile's rows.
         from api.profiles import get_active_profile_name
         active_profile = get_active_profile_name()
         all_profiles = _all_profiles_query_flag(parsed)
@@ -2067,6 +2074,7 @@ def handle_get(handler, parsed) -> bool:
             scoped = [s for s in merged
                       if _profiles_match(s.get("profile"), active_profile)]
             other_profile_count = len(merged) - len(scoped)
+        scoped = _keep_latest_messaging_session_per_source(scoped)
         safe_merged = []
         for s in scoped:
             item = dict(s)

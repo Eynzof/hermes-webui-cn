@@ -727,7 +727,7 @@ def _create_profile_fallback(name: str, clone_from: str = None,
 
     # Clone config files from source profile if requested
     if clone_config and clone_from:
-        if clone_from == 'default':
+        if _is_root_profile(clone_from):
             source_dir = _DEFAULT_HERMES_HOME
         else:
             source_dir = _DEFAULT_HERMES_HOME / 'profiles' / clone_from
@@ -776,7 +776,7 @@ def create_profile_api(name: str, clone_from: str = None,
     _validate_profile_name(name)
     # Defense-in-depth: validate clone_from here too, even though routes.py
     # also validates it. Any caller that bypasses the HTTP layer gets protection.
-    if clone_from is not None and clone_from != 'default':
+    if clone_from is not None and not _is_root_profile(clone_from):
         _validate_profile_name(clone_from)
 
     try:

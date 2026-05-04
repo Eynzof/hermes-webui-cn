@@ -1868,14 +1868,14 @@ function renderSessionListFromCache(){
     (activeSidForSidebar&&s.session_id===activeSidForSidebar) ||
     (S.session&&s.session_id===S.session.session_id&&(S.session.message_count||0)>0)
   );
-  // Filter by active profile (unless "All profiles" is toggled on).
-  // Server backfills profile='default' for legacy sessions, so every session has a profile.
-  // The server already scopes /api/sessions by the active profile by default (#1611),
-  // so this is a defense-in-depth client-side mirror — _showAllProfiles requests
-  // ?all_profiles=1 which short-circuits the server filter.
-  const profileFiltered=_showAllProfiles
-    ? withMessages
-    : withMessages.filter(s=>(s.profile||'default')===(S.activeProfile||'default'));
+  // The server is authoritative for profile scoping (#1611): it filters by
+  // active profile when no query param is set, and returns the aggregate when
+  // we send ?all_profiles=1. The renamed-root cross-alias (a row tagged
+  // 'default' matching active 'kinni' when kinni.is_default) lives server-side
+  // in _profiles_match, and a strict-equality client filter would reject those
+  // rows incorrectly. So we trust the wire data and skip the redundant client
+  // filter entirely.
+  const profileFiltered=withMessages;
   // Filter by active project. NO_PROJECT_FILTER sentinel asks for sessions
   // with no project_id; otherwise filter to the matching project_id, or
   // pass through when no filter is active.
@@ -1965,11 +1965,9 @@ function renderSessionListFromCache(){
   // Profile filter toggle (show sessions from other profiles).
   // Cross-profile rows live SERVER-SIDE behind ?all_profiles=1, so the toggle
   // must trigger a refetch — there's no client-cached aggregate to slice through.
-  // Falls back to client-side count if server didn't supply other_profile_count
-  // (e.g. older server build), to preserve UI affordance during partial rollouts.
-  const otherProfileCount = _otherProfileCount > 0
-    ? _otherProfileCount
-    : withMessages.filter(s=>(s.profile||'default')!==(S.activeProfile||'default')).length;
+  // The server is authoritative for the count (renamed-root cross-alias is
+  // server-side). A naive strict-equality client fallback would mis-count.
+  const otherProfileCount = _otherProfileCount;
   if(otherProfileCount>0&&!_showAllProfiles){
     const pfToggle=document.createElement('div');
     pfToggle.style.cssText='font-size:10px;padding:4px 10px;color:var(--muted);cursor:pointer;text-align:center;opacity:.7;';

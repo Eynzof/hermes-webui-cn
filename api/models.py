@@ -1009,12 +1009,8 @@ def _backfill_project_profiles_if_needed(projects: list) -> bool:
     (cached via the module-level _projects_migrated flag) but the result is
     persisted so it's a one-time write.
     """
-    global _projects_migrated
-    if _projects_migrated:
-        return False
     untagged = [p for p in projects if not p.get('profile')]
     if not untagged:
-        _projects_migrated = True
         return False
 
     # Build session_id -> profile map for the untagged project_ids.
@@ -1036,7 +1032,6 @@ def _backfill_project_profiles_if_needed(projects: list) -> bool:
         inferred = session_profile_by_project.get(p.get('project_id'), 'default')
         p['profile'] = inferred
         mutated = True
-    _projects_migrated = True
     return mutated
 
 
@@ -1047,19 +1042,28 @@ def load_projects(*, _migrate: bool = True) -> list:
     on legacy untagged projects (#1614). Disable via `_migrate=False` for
     callsites that want the raw on-disk shape (test fixtures, e.g.).
     """
+    global _projects_migrated
     if not PROJECTS_FILE.exists():
         return []
     try:
         projects = json.loads(PROJECTS_FILE.read_text(encoding='utf-8'))
     except Exception:
         return []
-    if _migrate:
+    if _migrate and not _projects_migrated:
         with _PROJECTS_MIGRATION_LOCK:
+            # Re-check inside the lock — another thread may have raced.
+            if _projects_migrated:
+                return projects
             if _backfill_project_profiles_if_needed(projects):
                 try:
                     save_projects(projects)
+                    _projects_migrated = True
                 except Exception:
                     logger.debug("Failed to persist project profile backfill")
+                    # Leave _projects_migrated False so a future call retries.
+            else:
+                # Nothing to migrate — already tagged.
+                _projects_migrated = True
     return projects
 
 def save_projects(projects) -> None:

@@ -102,9 +102,10 @@ def test_static_sessions_js_no_cli_session_bypass():
     """static/sessions.js must NOT filter via `s.is_cli_session || s.profile ===`.
 
     The original bypass let every CLI-imported session leak into the active-profile
-    sidebar regardless of which profile owned it. After #1611, the filter is
-    solely on `(s.profile||'default') === (S.activeProfile||'default')` — server
-    already scoped the wire data, this is defense-in-depth.
+    sidebar regardless of which profile owned it. After #1611 + the Opus pre-release
+    SHOULD-FIX, the client trusts the server's scoped wire data and does not
+    re-filter by profile at all (a strict-equality client filter would reject
+    the server's renamed-root cross-aliased rows).
     """
     from pathlib import Path
 
@@ -116,10 +117,6 @@ def test_static_sessions_js_no_cli_session_bypass():
     )
     assert "s.is_cli_session || s.profile === S.activeProfile" not in src, (
         "Old CLI-session bypass must be removed (#1611)"
-    )
-    # And the new shape is present
-    assert "(s.profile||'default')===(S.activeProfile||'default')" in src, (
-        "Expected the new active-profile-only filter shape"
     )
 
 
@@ -142,6 +139,69 @@ def test_static_sessions_js_uses_all_profiles_query_when_toggle_on():
     )
     assert "api('/api/projects' + allProfilesQS)" in src, (
         "Expected /api/projects fetch to use the variant query"
+    )
+
+
+# ── SHOULD-FIX #2: profile filter must run BEFORE messaging-source dedupe ──
+# Bug shape (Opus pre-release advisor): _messaging_source_key is profile-blind,
+# so if profiles A and B both have a session for the same Slack identity, a
+# profile-blind dedupe runs first and discards the older profile's row, then
+# the profile filter scopes — leaving the losing profile with zero rows for
+# that source.
+
+
+def test_keep_latest_messaging_runs_after_profile_filter():
+    """Source-string check: api/routes.py /api/sessions handler must call
+    _keep_latest_messaging_session_per_source AFTER the profile filter."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent
+    src = (repo_root / 'api' / 'routes.py').read_text(encoding='utf-8')
+
+    handler_idx = src.find('parsed.path == "/api/sessions":')
+    assert handler_idx > 0
+    next_handler = src.find('parsed.path == "/api/projects":', handler_idx)
+    block = src[handler_idx:next_handler]
+
+    filter_idx = block.find('_profiles_match(s.get("profile"), active_profile)')
+    dedupe_idx = block.find('_keep_latest_messaging_session_per_source(scoped)')
+    assert filter_idx > 0, "Profile filter not found in /api/sessions handler"
+    assert dedupe_idx > 0, "Messaging dedupe must run on the scoped list"
+    assert filter_idx < dedupe_idx, (
+        "Profile filter must run BEFORE messaging-source dedupe — running it "
+        "after lets the dedupe discard the active profile's row when both "
+        "profiles share a messaging identity (Opus pre-release SHOULD-FIX #2)"
+    )
+
+
+# ── SHOULD-FIX #1: client filter must NOT strict-equality-reject server cross-aliased rows ──
+
+
+def test_static_sessions_js_trusts_server_profile_scoping():
+    """After SHOULD-FIX #1, the client should NOT re-filter via strict equality.
+
+    Bug shape: server returns rows tagged 'default' to an active 'kinni' user
+    (when kinni is the renamed root) via _profiles_match cross-alias. A
+    naïve `(s.profile||'default')===(S.activeProfile||'default')` client filter
+    rejects them — user loses every legacy 'default'-tagged session.
+
+    Fix: drop the redundant client filter; trust the server."""
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent
+    src = (repo_root / 'static' / 'sessions.js').read_text(encoding='utf-8')
+
+    # The fragile client-side strict-equality filter must be gone.
+    forbidden = "withMessages.filter(s=>(s.profile||'default')===(S.activeProfile||'default'))"
+    assert forbidden not in src, (
+        "Client must not re-filter rows the server already cross-aliased "
+        "(Opus pre-release SHOULD-FIX #1)"
+    )
+
+    # And the count fallback that ran the same broken comparison must be gone too.
+    forbidden_count = "withMessages.filter(s=>(s.profile||'default')!==(S.activeProfile||'default')).length"
+    assert forbidden_count not in src, (
+        "Client otherProfileCount must come from server, not strict-equality fallback"
     )
 
 

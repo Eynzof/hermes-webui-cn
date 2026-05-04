@@ -10,16 +10,24 @@
 
 ### Tests
 
-4142 → **4173 passing** (+31 regression tests across `tests/test_issue1611_session_profile_filtering.py` (9), `tests/test_issue1612_renamed_root_profile.py` (11), `tests/test_issue1614_project_profile_filtering.py` (11)). 0 regressions. Full suite in ~120s.
+4142 → **4175 passing** (+33 regression tests across `tests/test_issue1611_session_profile_filtering.py` (11), `tests/test_issue1612_renamed_root_profile.py` (11), `tests/test_issue1614_project_profile_filtering.py` (11)). 0 regressions. Full suite in ~120s.
 
 ### Pre-release verification
 
-- Self-built fix (nesquena-hermes), pending independent review APPROVED by nesquena and Opus advisor pre-merge pass.
+- Self-built fix (nesquena-hermes), Opus advisor pre-merge pass with 2 SHOULD-FIX absorbed in-PR (see Opus-applied fixes below); independent review APPROVED by nesquena pending.
 - `_is_root_profile` invalidation cycle exercised via test_is_root_profile_invalidation_drops_stale (cache populated, then dropped after simulated profile rename).
 - `ensure_cron_project` per-profile isolation exercised via test_ensure_cron_project_creates_per_profile (two profiles → two distinct project_ids).
 - Legacy migration covered: untagged projects with sessions inherit session profile; orphan projects fall back to 'default'; idempotent (no-op on second call).
 - Cross-alias matching pinned: `_profiles_match('default', 'kinni')` returns True only when `kinni` is `is_default`.
 - Source-string assertions pin the active-profile guards on `/api/projects/{rename,delete}` and `/api/session/move`.
+
+### Opus-applied fixes (absorbed in-PR per release policy)
+
+- **SHOULD-FIX #1 (renamed-root client cross-alias)**: removed the strict-equality client filter at `static/sessions.js:1853`. Server-side `_profiles_match` cross-aliases `'default'`-tagged rows to a renamed root `'kinni'`; a strict-equality client filter would have rejected them, dropping every legacy session for renamed-root users. Server is now solely authoritative for profile scoping. Same fix applied to the `otherProfileCount` client fallback.
+- **SHOULD-FIX #2 (messaging-source dedupe ordering)**: moved `_keep_latest_messaging_session_per_source(merged)` to AFTER the profile filter at `api/routes.py:2078`. Before: the dedupe ran on the merged-cross-profile list with profile-blind keys, discarding the older profile's row across profiles, then the profile filter scoped to the active profile — leaving zero rows for any messaging identity the active profile shared with another profile. After: filter first, then dedupe within scope.
+- **NIT #3 (migration save-failure)**: `_projects_migrated = True` flag now set only AFTER successful `save_projects()`. A failed save no longer poisons the in-memory state for the rest of process lifetime.
+- **NIT #4 (dead test code)**: cleaned up the dead double-assignment in `test_is_root_profile_invalidation_drops_stale`.
+- **NIT #5 (`_create_profile_fallback` literal-default)**: routed the `clone_from == 'default'` literal in the no-hermes-cli fallback path through `_is_root_profile()` for parity with the other 5 callsites.
 
 
 ## [v0.50.292] — 2026-05-04
