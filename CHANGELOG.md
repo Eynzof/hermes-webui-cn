@@ -1,5 +1,27 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.295] — 2026-05-04
+
+### Fixed (1 PR — closes #1618 / #1463)
+
+- **YAML, JSON, and diff/patch fenced code blocks now render multi-line, not collapsed to a single line** (closes #1618 / #1463, reported by @Zixim) — PR #484 (v0.50.237) introduced a JSON/YAML tree-viewer that routes `lang === 'json'` and `lang === 'yaml'` blocks through `<div class="code-tree-wrap">…<pre class="tree-raw-view">…</pre></div>` instead of bare `<pre>`. Same release added the diff/patch coloring path that emits `<pre class="diff-block">`. The `_pre_stash` regex at `static/ui.js:1914` matched only literal `<pre>` (no attributes): `<pre>[\s\S]*?<\/pre>`. Both new shapes failed to match, fell through to the paragraph-wrap pass, and `\n` characters inside the code blocks got replaced with `<br>` tags inside `<code>`. By the time Prism ran, there were no newlines left for it to highlight against. PR #1516 (v0.50.279) had attempted a CSS-only fix on Prism's token white-space — that rule is in `style.css` and reaches the browser, but it was the wrong layer: the rule preserves newlines inside `.token` spans, but the spans were built from a string that had no newlines left. **Fix:** relax the `_pre_stash` regex to accept any attribute on `<pre>` (`<pre>` → `<pre[^>]*>`). One regex character. Pulls JSON, YAML, AND diff/patch blocks into the stash so paragraph-wrap can't mangle them. Bash, Python, Go, etc. were never affected because they emit bare `<pre>` and matched the existing regex. Reporter @Zixim noted the bug persisted from v0.50.279 → v0.50.291 → v0.50.292 despite the previous "fix"; this lands the actual fix at the actual layer.
+
+  > **Note on the previous diagnosis:** the maintainer comment on #1618 asserting the fix had landed was based on `git show v0.50.291:static/style.css` confirming the CSS rule's presence — but a presence check on a rule is not a behavioral check that the rule does anything useful. Live-rendering YAML through `renderMd()` in the browser was the test that decided whether the maintainer reply or the user was correct. Apologies to @Zixim for the wrong call. Class of bug now documented in `webui-rendermd-pipeline` skill § Bug 10.
+
+### Tests
+
+4245 → **4254 passing** (+9 regression tests on `tests/test_issue1618_yaml_json_diff_newline_preserve.py`). 0 regressions. Full suite in ~115s.
+
+- **2 source-string tests** pin the regex shape (`<pre[^>]*>`) and structural integrity of the surrounding `_pre_stash` block.
+- **7 behavioral tests** drive the actual `static/ui.js` `renderMd()` via a node-driver and assert that YAML, JSON, diff, yml-alias (sanity), bash (sanity), mermaid (sanity), and a multi-line YAML scenario all preserve their `\n` characters in the rendered `<pre>` inner content. Six of these tests fail on master without the fix and pass with it — the sanity checks (yml/bash/mermaid) pass on both because their code paths emit bare `<pre>` or `<div class="mermaid-block">` and were never affected.
+- Plus widened the source-scan window in 3 pre-existing `tests/test_745_code_block_newlines.py` assertions from 400 to 1500 chars (the new comment block above the fixed regex pushed the regex past the previous scan window — `pytest-pitfalls` § D documents this exact pattern).
+
+### Pre-release verification
+
+- Self-built fix (nesquena-hermes), pending Opus advisor pre-merge pass and independent review APPROVED by nesquena.
+- **Verified the bug reproduces on master**: the 6 behavioral tests fail on `origin/master` (304a422) with the literal-`<pre>`-only regex, then pass after the one-character relax. The 3 sanity checks (yml/bash/mermaid) pass on both — confirming the fix doesn't break unaffected paths.
+- **Live browser render** confirms the rendered YAML now multi-lines correctly with `\n` characters in `<code>` textContent (was `'foo:  bar: 1  baz:    - 2    - 3'` pre-fix, now `'foo:\n  bar: 1\n  baz:\n    - 2\n    - 3'` post-fix).
+
 ## [v0.50.294] — 2026-05-04
 
 ### Fixed (3 PRs — streaming stability trio + models cache version stamp + session race + readonly fs guard — closes #1430, #1470, #1623, #1624, #1625, #1633)

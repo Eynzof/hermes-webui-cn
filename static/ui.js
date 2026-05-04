@@ -1927,7 +1927,15 @@ function renderMd(raw){
   // with <br>. Token \x00E (next free after B D F G L M C O A).
   // Fixes #745: code blocks collapse to single line when not preceded by blank line.
   const _pre_stash=[];
-  s=s.replace(/(<div class="pre-header">[\s\S]*?<\/div>)?<pre>[\s\S]*?<\/pre>|<div class="(mermaid-block|katex-block)"[\s\S]*?<\/div>/g,m=>{
+  // #1463 / #1618: regex must match <pre> with ANY attributes — PR #484 added
+  // <pre class="tree-raw-view"> for JSON/YAML and <pre class="diff-block"> for
+  // diff/patch which the literal-<pre> shape missed. Newlines inside those
+  // blocks were falling through to the paragraph wrap below and getting
+  // converted to <br>, causing the YAML/JSON/diff collapse. PR #1516's CSS
+  // fix targeted the wrong layer (Prism token white-space) — by the time it
+  // ran, the \n had already been replaced. The CSS rule is kept as defense
+  // in depth.
+  s=s.replace(/(<div class="pre-header">[\s\S]*?<\/div>)?<pre[^>]*>[\s\S]*?<\/pre>|<div class="(mermaid-block|katex-block)"[\s\S]*?<\/div>/g,m=>{
     _pre_stash.push(m);
     return '\x00E'+(_pre_stash.length-1)+'\x00';
   });
