@@ -452,11 +452,17 @@ def test_send_uses_session_model_as_authoritative_source(cleanup_test_sessions):
     causing the wrong model to be sent.
     """
     src = (REPO_ROOT / "static/messages.js").read_text()
-    # The model field in the chat/start payload must prefer S.session.model
-    chat_start_idx = src.find("/api/chat/start")
-    assert chat_start_idx >= 0
-    payload_block = src[chat_start_idx:chat_start_idx+300]
-    assert "S.session.model" in payload_block,         "send() must use S.session.model in the chat/start payload"
+    # The model field in the chat/start payload must prefer S.session.model.
+    # PR #1591 (May 2026) added optimistic `upsertActiveSessionForLocalTurn`
+    # comments that mention `/api/chat/start` BEFORE the actual POST call, so
+    # `src.find("/api/chat/start")` may land on a comment occurrence rather
+    # than the `api('/api/chat/start',{...})` POST. Match the call signature
+    # explicitly to land on the payload block.
+    chat_start_idx = src.find("api('/api/chat/start'")
+    assert chat_start_idx >= 0, "could not find /api/chat/start POST in messages.js"
+    payload_block = src[chat_start_idx:chat_start_idx+400]
+    assert "S.session.model" in payload_block, \
+        "send() must use S.session.model in the chat/start payload"
 
 
 # ── R15: newSession does not clear live tool cards ────────────────────────────

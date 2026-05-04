@@ -1,5 +1,46 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.290] — 2026-05-04
+
+### Fixed + Feature (5-PR batch — login cache + sidebar UX + workspace dropdown polish)
+
+- **Login asset SW cache exemption** (#1586 by @Michaelyklam) — service worker now bypasses `/login` and `/static/login.js` (network-only), navigation requests are network-first, and cache-first is scoped to an explicit `SHELL_ASSETS` allowlist (`./` dropped from the precache list). `static/login.js` is also versioned via `?v=<WEBUI_VERSION>` so a stale cached login script can never block a fresh password submit. Closes the auth-stuck-in-cache class: a stale cached `login.js` with old auth-submit path was making valid passwords fail until users manually cleared browser cache, which is especially confusing for PWA installs. Two new test files (`test_service_worker_api_cache.py`, `test_sprint19.py`) lock the SW behavior — including a `fetch_idx < cache_idx` ordering check so the navigation branch can never silently regress to cache-first.
+
+- **Hot-apply compact tool activity setting** (#1590 by @Michaelyklam) — `static/panels.js:_autosavePreferencesSettings` now captures the POST response, and when the autosaved payload includes `simplified_tool_calling`, updates `window._simplifiedToolCalling`, clears the message render cache, and re-renders messages immediately. Settings checkboxes that silently waited for a refresh felt broken — especially this one, which changes transcript structure rather than just a stored preference. Hot-applying the renderer mode keeps settings behavior consistent with user expectations: toggle means visible now. 6 LOC code + structural regression test.
+
+- **First-turn sidebar visibility** (#1591 by @Michaelyklam) — empty `Untitled` sessions are intentionally ephemeral so accidental blank chats don't clutter the sidebar, but a first user message should promote the session into a real visible conversation immediately, before the model produces an assistant response. The bug was a race between the local first-message render and `/api/sessions`: the client could re-fetch stale zero-message metadata before `/api/chat/start` saved pending state, hiding the row until the assistant turn completed. Three pieces: (1) new `upsertActiveSessionForLocalTurn()` helper in `static/sessions.js` that writes to the cached sidebar list directly; (2) three optimistic-upsert passes in `static/messages.js:send()` (before /api/chat/start, after rename, after stream_id known) plus dropping the pre-start `/api/sessions` re-fetch race; (3) `api/models.py:Session.compact()` now bumps `message_count` to ≥1 and sets `last_message_at` to `pending_started_at` when `pending_user_message` is set, plus exposes a new `has_pending_user_message: bool` field that the empty-Untitled filter respects. Users can now switch into a just-started conversation and inspect live tool calls even before the agent has responded. 191/9 LOC code + 99-LOC regression test.
+
+- **Turn duration display ("Done in 1m 12s")** (#1592 by @Michaelyklam) — `api/streaming.py` captures `s.pending_started_at` in `_run`, calculates `_turn_duration_seconds = max(0.0, time.time() - float(_turn_started_at))` at completion, persists it on the assistant message dict as `_turnDuration` (so reloads keep the display), and includes `duration_seconds` in the streaming `done` usage SSE payload. Frontend reads from both surfaces: live during streaming via `attachLiveStream()` reading `usage.duration_seconds`, persistent across reloads via the `_turnDuration` field. Renders as "Done in 1m 12s" — on the compact Activity row in compact mode, and as a subtle assistant footer chip in expanded tool-call mode. 152/20 LOC code + 67-LOC regression test. Opus advisor flagged a `_pending_started_at == 0` falsy-vs-None edge case as a hypothetical SHOULD-FIX; not absorbed in-release because the contributor's regression test pins the explicit `is not None` form. Filed as follow-up for separate consideration.
+
+- **Workspace dropdown sort + search + chip sync on chat switch** (#1464 by @JKJameson; maintainer-augmented) — `static/sessions.js:loadSession()` now calls `syncTopbar()` immediately after `S.session = data.session`, before async message-loading begins (mirrors how the model chip is handled). `static/panels.js:renderWorkspaceDropdownInto` is rewritten with: a search input that filters by name or path in real-time; alphabetical sort (frontend only via `localeCompare`, backend `load_workspaces()` preserves user-defined order so drag-to-reorder #492 keeps working); class-based CSS (`.ws-list-container`, `.ws-search-row`, `.ws-search-input`, `.ws-no-results`); 9-locale i18n parity for the new keys (`ws_search_placeholder`, `ws_no_results`). 84/6 LOC code + 61-LOC regression test. **Maintainer in-stage actions:** rebased onto current master (was 124 commits behind v0.50.275); flipped inverted ternary on `panels.js:1683` (`visible?'':'none'` → `visible?'none':''`) — contributor's own screenshot in PR thread demonstrated the bug live (rendered "No workspaces found" alongside valid filtered results); added `tests/test_issue1464_workspace_dropdown_filter.py` to lock the visibility relationship as mirror-image opt/noResults ternaries so future edits cannot silently re-invert. Desktop UX gate verified live on test server (alphabetical sort + search filter + zero-match noResults rendering — single message, no duplication). Mobile (390px) responsive verification pending — couldn't be captured via CDP origin-policy block, deferring true 390px screenshot review to maintainer Aron's hands-on session.
+
+### Maintainer-side test fixes in stage (auto-rebase + auto-fix policy)
+
+Two stale source-string assertions were broken by #1591's compact() and messages.js changes — both real test-side fixes, no production code modified:
+
+- `tests/test_465_session_branching.py::test_session_compact_includes_parent` — widened search window from 1500 to 3000 chars after `def compact(self,` because #1591 inserted a `has_pending_user_message` recompute block at the top, pushing `parent_session_id` beyond the original window.
+- `tests/test_regressions.py::test_send_uses_session_model_as_authoritative_source` — switched anchor from `src.find("/api/chat/start")` (which #1591 made first match a comment line) to `src.find("api('/api/chat/start'")` so the search lands on the actual POST call.
+
+### Tests
+
+4094 → **4111 passing** (+17 net: +6 from #1586, +1 from #1590, +1 from #1591, +6 from #1592, +1 from #1464, +2 maintainer-side test widenings). 0 regressions. Full suite in 107s.
+
+### Pre-release verification
+
+- All 5 PRs' regression tests pass standalone.
+- All 4111 tests pass in the full suite (clean state, no pre-existing flakes).
+- Browser API sanity (HTTP checks against port 8789): 11/11 endpoints verified.
+- All modified JS files (`static/panels.js`, `static/messages.js`, `static/sessions.js`, `static/sw.js`, `static/ui.js`, `static/i18n.js`) pass `node -c`.
+- Stage diff scanned for merge-conflict markers (post-v0.50.279 procedure): none found.
+- **Live UX verification on test server (#1464 dropdown):** seeded test environment with 10 workspaces (alpha/beta/delta/epsilon/eta/gamma/theta/zeta + Home + workspace), drove the composer workspace chip → dropdown opens with search input pinned at top, workspaces alphabetically sorted (verified visually + via `dataset.name` extraction), filtering "alp" narrows to single `alpha` row with no spurious noResults message, filtering "zzznomatch" shows clean "No workspaces found" empty-state with no concurrent ws-opt rows. Vision-confirmed. Inverted-ternary fix verified working in production.
+- Pre-release Opus advisor: **SHIP AS-IS** — no MUST-FIX. All 5 verification questions check out (no `has_pending_user_message` TTL needed because every termination path clears the marker; three optimistic-upsert passes are race-safe via `findIndex`-keyed merge in single-threaded JS; `_turn_started_at` fallback is correct because recovered sessions are marked complete and never re-run `_run`; SHELL_ASSETS scoping is intentional cache-bust contract; numeric `visible` ternary is correct because JS `0` is falsy). One non-blocking SHOULD-FIX (`_pending_started_at == 0` falsy-guard tightening) considered for in-release absorption, but the contributor's regression test in `test_turn_duration_display.py:24` literally pins the `if _pending_started_at is not None else time.time()` source-string form. Reverted the Opus tightening to preserve the contributor's intent and test assertion. Filed as a follow-up for separate consideration if the falsy-guard is desired.
+
+### Maintainer in-stage actions
+
+- **PR rebase verified** (REBASE-DEFAULT rule): #1586/#1590/#1591/#1592 all on current master (bf7bc6b4 = v0.50.289), zero commits behind. #1464 was 124 commits behind (forked at v0.50.275); rebased cleanly onto master.
+- **Auto-fix on #1464:** ternary inversion + regression test, with `Co-authored-by: Josh Jameson` preserved.
+- **Auto-fix on stage:** widened source-string anchors in two pre-existing brittle tests broken by #1591's structural changes.
+
 ## [v0.50.289] — 2026-05-03
 
 ### Fixed (1 PR — TCP keepalive on accepted connections — closes #1580)

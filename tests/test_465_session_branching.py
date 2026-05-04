@@ -115,11 +115,14 @@ def test_session_compact_includes_parent():
     """Verify compact() includes parent_session_id."""
     with open('api/models.py') as f:
         src = f.read()
-    # Use simpler search - find the compact method and check for parent_session_id after it
+    # Find the compact method and scan its full body for parent_session_id.
+    # PR #1591 (May 2026) added a has_pending_user_message recompute block at
+    # the top of compact() which pushed the parent_session_id field beyond a
+    # 1500-char window — widen the scan to 3000 chars to cover the full
+    # return-dict body without re-tightening every time compact() grows.
     compact_def_match = re.search(r"def compact\(self", src)
     assert compact_def_match, "Could not find compact() method"
-    # Check the next 1000 chars after def compact for parent_session_id
-    snippet = src[compact_def_match.start():compact_def_match.start() + 1500]
+    snippet = src[compact_def_match.start():compact_def_match.start() + 3000]
     assert "'parent_session_id'" in snippet, \
         "compact() should include parent_session_id"
 
