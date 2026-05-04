@@ -328,6 +328,7 @@ from api.config import (
     get_reasoning_status,
     set_reasoning_display,
     set_reasoning_effort,
+    create_stream_channel,
 )
 from api.helpers import (
     require,
@@ -3645,9 +3646,10 @@ def _handle_list_dir(handler, parsed):
 
 def _handle_sse_stream(handler, parsed):
     stream_id = parse_qs(parsed.query).get("stream_id", [""])[0]
-    q = STREAMS.get(stream_id)
-    if q is None:
+    stream = STREAMS.get(stream_id)
+    if stream is None:
         return j(handler, {"error": "stream not found"}, status=404)
+    subscriber = stream.subscribe() if hasattr(stream, "subscribe") else stream
     handler.send_response(200)
     handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
     handler.send_header("Cache-Control", "no-cache")
@@ -3657,7 +3659,7 @@ def _handle_sse_stream(handler, parsed):
     try:
         while True:
             try:
-                event, data = q.get(timeout=30)
+                event, data = subscriber.get(timeout=30)
             except queue.Empty:
                 handler.wfile.write(b": heartbeat\n\n")
                 handler.wfile.flush()
@@ -3667,6 +3669,12 @@ def _handle_sse_stream(handler, parsed):
                 break
     except _CLIENT_DISCONNECT_ERRORS:
         pass
+    finally:
+        if subscriber is not stream and hasattr(stream, "unsubscribe"):
+            try:
+                stream.unsubscribe(subscriber)
+            except Exception:
+                pass
     return True
 
 
@@ -4808,9 +4816,9 @@ def _handle_btw(handler, body):
     stream_id = uuid.uuid4().hex
     ephemeral.active_stream_id = stream_id
     ephemeral.save()
-    q = queue.Queue()
+    stream = create_stream_channel()
     with STREAMS_LOCK:
-        STREAMS[stream_id] = q
+        STREAMS[stream_id] = stream
     from api.background import track_btw
     track_btw(body["session_id"], ephemeral.session_id, stream_id, question)
     thr = threading.Thread(
@@ -4854,9 +4862,9 @@ def _handle_background(handler, body):
     stream_id = uuid.uuid4().hex
     bg.active_stream_id = stream_id
     bg.save()
-    q = queue.Queue()
+    stream = create_stream_channel()
     with STREAMS_LOCK:
-        STREAMS[stream_id] = q
+        STREAMS[stream_id] = stream
     task_id = uuid.uuid4().hex[:8]
     from api.background import track_background, complete_background
     parent_sid = body["session_id"]
@@ -4970,9 +4978,9 @@ def _handle_chat_start(handler, body):
         s.pending_started_at = time.time()
         s.save()
     set_last_workspace(workspace)
-    q = queue.Queue()
+    stream = create_stream_channel()
     with STREAMS_LOCK:
-        STREAMS[stream_id] = q
+        STREAMS[stream_id] = stream
     thr = threading.Thread(
         target=_run_agent_streaming,
         args=(s.session_id, msg, model, workspace, stream_id, attachments),
