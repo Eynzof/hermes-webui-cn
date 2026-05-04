@@ -1,5 +1,21 @@
 # Hermes Web UI -- Changelog
 
+## [v0.50.291] — 2026-05-04
+
+### Fixed (1 PR — "What's new?" link 404 — closes #1579)
+
+- **"What's new?" update-banner link no longer 404s when local HEAD diverges from upstream** (closes #1579, reported by @ai-ag2026) — `api/updates.py` was building the GitHub compare URL from local-`HEAD` short SHA: `repoUrl + '/compare/' + curSha + '...' + newSha` where `curSha = git rev-parse --short HEAD`. Whenever the local checkout had commits that weren't in the upstream repo — unpushed work, dirty stage branches, forks, in-flight rebases, release-time merge commits — the compare URL pointed at a SHA that github.com had never seen and returned its standard 404 page. Reporter saw `https://github.com/nesquena/hermes-webui/compare/c660c7f...86cb22e` produce a 404 because `c660c7f` was an unpushed local commit. **Fix:** replace `git rev-parse --short HEAD` with `git merge-base HEAD <compare_ref>` then `git rev-parse --short` on that result. The merge-base is the most recent commit both local and upstream share, and (since `git fetch` succeeded just before) is guaranteed to exist on the upstream GitHub repo. For the common case (pure-behind clone, no local commits) the merge-base equals local HEAD and the URL is unchanged from prior behavior. For the divergent case (the #1579 reporter scenario) the URL points at the public ancestor, which github.com always knows. If `merge-base` itself fails (shallow clone with no shared history), fall back to `current_sha=None` so the existing JS link guard (`if(repoUrl && curSha && newSha)`) suppresses the link entirely rather than emitting a known-broken URL. Also hardens `static/ui.js` to **clear** the link's `href` and `display:none` it on every banner render, so a stale link from a prior render can't survive a re-render where the new payload's `current_sha` is null. 6 regression tests covering merge-base correctness, backward-compat for pure-behind clones, merge-base-failure fallback, JS link reset on every render, JS conditional guard shape, and an end-to-end verification of the reporter's exact scenario.
+
+### Tests
+
+4111 → **4117 passing** (+6 regression tests on `tests/test_issue1579_whats_new_link_404.py`). 0 regressions. Full suite in ~115s.
+
+### Pre-release verification
+
+- Self-built fix (nesquena-hermes) with **independent review APPROVED by nesquena** — full end-to-end behavioral harness using throwaway local+upstream git fixtures verified the reporter's exact scenario produces a 404 pre-fix and resolves post-fix. Cross-tool audit (webui-only, no agent surface). Security audit clean. Race/state analysis: `_check_repo` is single-threaded per request, `_run_git` spawns subprocesses with no shared state. Edge-case trace covered 8 scenarios including pure-behind clone (URL unchanged from pre-fix), 2-unpushed-3-upstream (the reporter's case), pure-ahead, fork checkout, mid-rebase, shallow clone, transient `git merge-base` errors, and stale link from prior render with null current_sha.
+- Bug repro confirmed locally: simulated 2 unpushed commits + 3 upstream commits; `git rev-parse --short HEAD` returns SHA absent from upstream history (verifiable with `git cat-file -e $sha origin/master` failing); `git merge-base HEAD origin/master` returns SHA present in upstream history. Compare URL constructed from merge-base resolves on github.com; URL constructed from local HEAD 404s.
+- All other tests in `test_update_checker.py` (12) and `test_version_badge.py` (21) still pass — no behavioral changes to the diagnostic / version-detection paths.
+
 ## [v0.50.290] — 2026-05-04
 
 ### Fixed + Feature (5-PR batch — login cache + sidebar UX + workspace dropdown polish)
@@ -40,6 +56,7 @@ Two stale source-string assertions were broken by #1591's compact() and messages
 - **PR rebase verified** (REBASE-DEFAULT rule): #1586/#1590/#1591/#1592 all on current master (bf7bc6b4 = v0.50.289), zero commits behind. #1464 was 124 commits behind (forked at v0.50.275); rebased cleanly onto master.
 - **Auto-fix on #1464:** ternary inversion + regression test, with `Co-authored-by: Josh Jameson` preserved.
 - **Auto-fix on stage:** widened source-string anchors in two pre-existing brittle tests broken by #1591's structural changes.
+
 
 ## [v0.50.289] — 2026-05-03
 
