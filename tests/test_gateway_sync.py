@@ -773,6 +773,61 @@ def test_agent_session_source_normalization_contract():
             assert normalized['raw_source'] is None
 
 
+def test_cross_source_parent_child_is_not_collapsed_into_root_metadata(cleanup_test_sessions):
+    """A WebUI continuation from a messaging parent must keep WebUI metadata.
+
+    Regression for a production case where a WebUI session continued from a
+    Telegram compression chain and was projected as the old Telegram root,
+    inheriting the wrong title/source and hiding from the expected sidebar view.
+    """
+    from api.agent_sessions import read_importable_agent_session_rows
+
+    conn = _ensure_state_db()
+    root_sid = 'gw_tg_cross_source_root_001'
+    webui_sid = 'webui_cross_source_tip_001'
+    now = time.time()
+    cleanup_test_sessions.extend([root_sid, webui_sid])
+    try:
+        _insert_agent_session_row(
+            conn,
+            session_id=root_sid,
+            source='telegram',
+            title='Old Telegram Root',
+            started_at=now - 20,
+            ended_at=now - 10,
+            end_reason='compression',
+            messages=2,
+        )
+        _insert_agent_session_row(
+            conn,
+            session_id=webui_sid,
+            source='webui',
+            title='Current WebUI Work',
+            started_at=now - 9,
+            parent_session_id=root_sid,
+            messages=2,
+        )
+
+        rows = read_importable_agent_session_rows(_get_state_db_path(), exclude_sources=None)
+        by_id = {row['id']: row for row in rows}
+
+        assert webui_sid in by_id
+        assert root_sid in by_id
+        webui = by_id[webui_sid]
+        assert webui.get('title') == 'Current WebUI Work'
+        assert webui.get('source') == 'webui'
+        assert webui.get('session_source') == 'webui'
+        assert webui.get('source_label') == 'WebUI'
+        assert webui.get('relationship_type') == 'child_session'
+        assert webui.get('parent_title') == 'Old Telegram Root'
+    finally:
+        try:
+            _remove_test_sessions(conn, root_sid, webui_sid)
+            conn.close()
+        except Exception:
+            pass
+
+
 def test_gateway_watcher_uses_normalized_source_metadata(monkeypatch):
     """SSE snapshots use the same normalized source contract as /api/sessions."""
     conn = _ensure_state_db()

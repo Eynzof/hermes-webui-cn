@@ -79,8 +79,17 @@ def _is_continuation_session(parent: dict | None, child: dict | None) -> bool:
     should continue the same visible conversation rather than becoming a
     separate child-session row. Plain parent/child links that started before the
     parent's ended boundary remain child sessions.
+
+    Do not collapse lineage across raw sources. A WebUI session that continues
+    from a Telegram/CLI/etc. parent must remain visible as its own surface-owned
+    conversation; otherwise the tip inherits the root's title/source metadata and
+    can disappear under messaging/sidebar policies.
     """
     if not parent or not child:
+        return False
+    parent_source = str(parent.get('source') or '').strip().lower()
+    child_source = str(child.get('source') or '').strip().lower()
+    if parent_source and child_source and parent_source != child_source:
         return False
     if parent.get('end_reason') not in {'compression', 'cli_close'}:
         return False
@@ -133,10 +142,13 @@ def _project_agent_session_rows(rows: list[dict]) -> list[dict]:
         if not parent_id:
             continue
         children_by_parent.setdefault(parent_id, []).append(row)
-        if _is_continuation_session(rows_by_id.get(parent_id), row):
+        parent = rows_by_id.get(parent_id)
+        if _is_continuation_session(parent, row):
             continuation_child_ids.add(row['id'])
         else:
             row['relationship_type'] = 'child_session'
+            row['parent_title'] = parent.get('title') if parent else None
+            row['parent_source'] = parent.get('source') if parent else None
             parent_root = _continuation_root_id(rows_by_id, parent_id)
             if parent_root:
                 row['_parent_lineage_root_id'] = parent_root
