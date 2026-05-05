@@ -21,6 +21,7 @@ from api.workspace import get_last_workspace
 from api.agent_sessions import read_importable_agent_session_rows, read_session_lineage_metadata
 
 logger = logging.getLogger(__name__)
+CLI_VISIBLE_SESSION_LIMIT = 20
 
 # ---------------------------------------------------------------------------
 # Stale temp-file cleanup
@@ -223,6 +224,12 @@ def _last_message_timestamp(messages):
         if ts:
             return ts
     return None
+
+
+def _message_role(message):
+    if not isinstance(message, dict):
+        return ''
+    return str(message.get('role', '')).strip().lower()
 
 
 def _find_top_level_json_key(text, key):
@@ -563,6 +570,9 @@ class Session:
             # Only emit 'parent_session_id' when set (the /branch fork link, #1342).
             # Sessions without a fork must not leak None — see test_session_lineage_metadata_api.
             **({'parent_session_id': self.parent_session_id} if self.parent_session_id else {}),
+            'user_message_count': sum(
+                1 for message in self.messages if _message_role(message) == 'user'
+            ) if isinstance(self.messages, list) else 0,
             'active_stream_id': self.active_stream_id,
             'pending_user_message': self.pending_user_message,
             'has_pending_user_message': has_pending_user_message,
@@ -1507,7 +1517,12 @@ def get_cli_sessions() -> list:
         return _cron_pid_cache[0]
 
     try:
-        for row in read_importable_agent_session_rows(db_path, limit=200, log=logger, exclude_sources=None):
+        for row in read_importable_agent_session_rows(
+            db_path,
+            limit=CLI_VISIBLE_SESSION_LIMIT,
+            log=logger,
+            exclude_sources=None,
+        ):
             sid = row['id']
             raw_ts = row['last_activity'] or row['started_at']
             # Prefer the CLI session's own profile from the DB; fall back to
@@ -1573,6 +1588,7 @@ def get_cli_sessions() -> list:
                 '_parent_lineage_root_id': row.get('_parent_lineage_root_id'),
                 'end_reason': row.get('end_reason'),
                 'actual_message_count': row.get('actual_message_count'),
+                'user_message_count': row.get('actual_user_message_count'),
                 '_lineage_root_id': row.get('_lineage_root_id'),
                 '_lineage_tip_id': row.get('_lineage_tip_id'),
                 '_compression_segment_count': row.get('_compression_segment_count'),
