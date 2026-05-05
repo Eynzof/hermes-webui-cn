@@ -4635,9 +4635,12 @@ async function loadProvidersPanel(){
   if(!list) return;
   try{
     const data=await api('/api/providers');
+    const quota=await api('/api/provider/quota').catch(e=>({ok:false,status:'unavailable',quota:null,message:e.message||'Quota status unavailable'}));
     const providers=(data.providers||[]).filter(p=>p.configurable||p.is_oauth);
     list.innerHTML='';
     _providerCardEls.clear();
+    const quotaCard=_buildProviderQuotaCard(quota);
+    if(quotaCard) list.appendChild(quotaCard);
     if(providers.length===0){
       list.style.display='none';
       if(empty) empty.style.display='';
@@ -4651,6 +4654,43 @@ async function loadProvidersPanel(){
   }catch(e){
     list.innerHTML='<div style="color:var(--error);padding:12px;font-size:13px">Failed to load providers: '+e.message+'</div>';
   }
+}
+
+function _formatProviderQuotaMoney(value){
+  if(value===null||value===undefined||value==='') return '—';
+  const n=Number(value);
+  if(!Number.isFinite(n)) return '—';
+  return '$'+n.toFixed(2);
+}
+
+function _buildProviderQuotaCard(status){
+  if(!status) return null;
+  const card=document.createElement('div');
+  const state=(status.status||'unavailable').replace(/[^a-z0-9_-]/gi,'').toLowerCase()||'unavailable';
+  card.className='provider-quota-card provider-quota-card-'+state;
+  const provider=status.display_name||status.provider||'Active provider';
+  const quota=status.quota||{};
+  let body='';
+  if(status.status==='available'&&quota){
+    body=`
+      <div class="provider-quota-metric"><span>Remaining</span><strong>${esc(_formatProviderQuotaMoney(quota.limit_remaining))}</strong></div>
+      <div class="provider-quota-metric"><span>Used</span><strong>${esc(_formatProviderQuotaMoney(quota.usage))}</strong></div>
+      <div class="provider-quota-metric"><span>Limit</span><strong>${esc(_formatProviderQuotaMoney(quota.limit))}</strong></div>
+    `;
+  }else{
+    body=`<div class="provider-quota-message">${esc(status.message||'Quota status unavailable')}</div>`;
+  }
+  card.innerHTML=`
+    <div class="provider-quota-header">
+      <div>
+        <div class="provider-quota-title">Active provider quota</div>
+        <div class="provider-quota-subtitle">${esc(provider)}</div>
+      </div>
+      <span class="provider-quota-badge">${esc(state.replace(/_/g,' '))}</span>
+    </div>
+    <div class="provider-quota-body">${body}</div>
+  `;
+  return card;
 }
 
 function _buildProviderCard(p){
