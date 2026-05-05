@@ -1902,6 +1902,47 @@ def _get_label_for_model(model_id: str, existing_groups: list) -> str:
     )
 
 
+def _read_visible_codex_cache_model_ids() -> list[str]:
+    """Return visible model slugs from Codex's local models_cache.json.
+
+    The agent's provider_model_ids('openai-codex') intentionally filters IDs
+    with ``supported_in_api: false``. Codex CLI still lists some of those models
+    in its picker (notably ``gpt-5.3-codex-spark`` from #1680), so the WebUI
+    merges this visible local catalog to stay in sync with Codex itself.
+    """
+    codex_home = Path(os.getenv("CODEX_HOME", "").strip() or (HOME / ".codex")).expanduser()
+    cache_path = codex_home / "models_cache.json"
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    entries = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return []
+
+    sortable: list[tuple[int, str]] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        if not isinstance(slug, str) or not slug.strip():
+            continue
+        visibility = item.get("visibility", "")
+        if isinstance(visibility, str) and visibility.strip().lower() in ("hide", "hidden"):
+            continue
+        priority = item.get("priority")
+        rank = int(priority) if isinstance(priority, (int, float)) else 10_000
+        sortable.append((rank, slug.strip()))
+
+    sortable.sort(key=lambda item: (item[0], item[1]))
+    ordered: list[str] = []
+    for _, slug in sortable:
+        if slug not in ordered:
+            ordered.append(slug)
+    return ordered
+
+
 def get_available_models() -> dict:
     """
     Return available models grouped by provider.
@@ -2670,6 +2711,43 @@ def get_available_models() -> dict:
                         ]
                     except Exception:
                         logger.warning("Failed to load Ollama Cloud models from hermes_cli")
+
+                    if raw_models:
+                        models = _apply_provider_prefix(raw_models, pid, active_provider)
+                        groups.append(
+                            {
+                                "provider": provider_name,
+                                "provider_id": pid,
+                                "models": models,
+                            }
+                        )
+                elif pid == "openai-codex":
+                    # Codex account catalogs drift faster than WebUI releases
+                    # (for example gpt-5.3-codex-spark in #1680). Ask the
+                    # agent's Codex resolver first so /api/models inherits the
+                    # live Codex API / local ~/.codex cache / static fallback
+                    # chain instead of freezing the picker to WebUI's curated
+                    # _PROVIDER_MODELS snapshot.
+                    raw_models = []
+                    codex_ids = []
+                    try:
+                        from hermes_cli.models import provider_model_ids as _provider_model_ids
+
+                        codex_ids = [mid for mid in (_provider_model_ids("openai-codex") or []) if mid]
+                    except Exception:
+                        logger.warning("Failed to load OpenAI Codex models from hermes_cli")
+
+                    for mid in _read_visible_codex_cache_model_ids():
+                        if mid not in codex_ids:
+                            codex_ids.append(mid)
+
+                    raw_models = [
+                        {"id": mid, "label": _get_label_for_model(mid, [])}
+                        for mid in codex_ids
+                    ]
+
+                    if not raw_models:
+                        raw_models = copy.deepcopy(_PROVIDER_MODELS.get("openai-codex", []))
 
                     if raw_models:
                         models = _apply_provider_prefix(raw_models, pid, active_provider)
