@@ -7,8 +7,11 @@ multi-provider support).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +25,9 @@ from api.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+_OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+_PROVIDER_QUOTA_TIMEOUT_SECONDS = 3.0
 
 # SECTION: Provider ↔ env var mapping
 
@@ -266,6 +272,185 @@ def _provider_has_key(provider_id: str) -> bool:
                     if str(cp.get("api_key") or "").strip():
                         return True
     return False
+
+
+def _get_provider_api_key(provider_id: str) -> str | None:
+    """Return a configured provider API key without exposing it to callers."""
+    provider_id = (provider_id or "").strip().lower()
+    env_var = _PROVIDER_ENV_VAR.get(provider_id)
+    if env_var:
+        env_path = _get_hermes_home() / ".env"
+        env_values = _load_env_file(env_path)
+        if env_values.get(env_var):
+            return str(env_values[env_var]).strip() or None
+        if os.getenv(env_var):
+            return os.getenv(env_var, "").strip() or None
+        for alias in _PROVIDER_ENV_VAR_ALIASES.get(provider_id, ()) or ():
+            if env_values.get(alias):
+                return str(env_values[alias]).strip() or None
+            if os.getenv(alias):
+                return os.getenv(alias, "").strip() or None
+
+    cfg = get_config()
+    model_cfg = cfg.get("model", {})
+    if isinstance(model_cfg, dict):
+        active_provider = str(model_cfg.get("provider") or "").strip().lower()
+        model_key = str(model_cfg.get("api_key") or "").strip()
+        if model_key and active_provider == provider_id:
+            return model_key
+
+    providers_cfg = cfg.get("providers", {})
+    if isinstance(providers_cfg, dict):
+        provider_cfg = providers_cfg.get(provider_id, {})
+        if isinstance(provider_cfg, dict):
+            provider_key = str(provider_cfg.get("api_key") or "").strip()
+            if provider_key:
+                return provider_key
+
+    custom_providers = cfg.get("custom_providers", [])
+    if isinstance(custom_providers, list):
+        for cp in custom_providers:
+            if not isinstance(cp, dict):
+                continue
+            cp_name = str(cp.get("name") or "").strip().lower().replace(" ", "-")
+            if f"custom:{cp_name}" == provider_id or str(cp.get("name", "")).strip().lower() == provider_id:
+                cp_key = str(cp.get("api_key") or "").strip()
+                if cp_key.startswith("${") and cp_key.endswith("}"):
+                    return os.getenv(cp_key[2:-1], "").strip() or None
+                if cp_key:
+                    return cp_key
+    return None
+
+
+def _active_provider_id() -> str | None:
+    cfg = get_config()
+    model_cfg = cfg.get("model", {})
+    if not isinstance(model_cfg, dict):
+        return None
+    provider = str(model_cfg.get("provider") or "").strip().lower()
+    return provider or None
+
+
+def _quota_number(value: Any) -> int | float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        number = float(text)
+        return int(number) if number.is_integer() else number
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_openrouter_quota(payload: Any) -> dict[str, int | float | None]:
+    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+    if not isinstance(payload, dict):
+        payload = {}
+    return {
+        "limit_remaining": _quota_number(payload.get("limit_remaining")),
+        "usage": _quota_number(payload.get("usage")),
+        "limit": _quota_number(payload.get("limit")),
+    }
+
+
+def get_provider_quota(provider_id: str | None = None) -> dict[str, Any]:
+    """Return sanitized quota/rate-limit status for the active provider.
+
+    Issue #706 starts conservatively with OpenRouter's documented key endpoint.
+    OpenAI/Anthropic only expose per-call headers; until the WebUI captures those
+    response headers, report a clear unsupported/follow-up state rather than
+    inventing stale or guessed quota numbers.
+    """
+    provider = (provider_id or _active_provider_id() or "").strip().lower()
+    if not provider:
+        return {
+            "ok": False,
+            "provider": None,
+            "display_name": None,
+            "supported": False,
+            "status": "unavailable",
+            "quota": None,
+            "message": "No active provider is configured.",
+        }
+
+    display_name = _PROVIDER_DISPLAY.get(provider, provider.replace("-", " ").title())
+    if provider != "openrouter":
+        detail = "OpenAI/Anthropic rate-limit headers are a follow-up once WebUI captures provider response metadata."
+        return {
+            "ok": False,
+            "provider": provider,
+            "display_name": display_name,
+            "supported": False,
+            "status": "unsupported",
+            "quota": None,
+            "message": f"Quota status is not available for {display_name}. {detail}",
+        }
+
+    api_key = _get_provider_api_key("openrouter")
+    if not api_key:
+        return {
+            "ok": False,
+            "provider": "openrouter",
+            "display_name": display_name,
+            "supported": True,
+            "status": "no_key",
+            "quota": None,
+            "message": "OpenRouter quota status needs an OPENROUTER_API_KEY configured on the server.",
+        }
+
+    req = urllib.request.Request(
+        _OPENROUTER_KEY_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_PROVIDER_QUOTA_TIMEOUT_SECONDS) as resp:
+            raw = resp.read()
+        payload = json.loads(raw.decode("utf-8")) if isinstance(raw, (bytes, bytearray)) else json.loads(raw)
+        quota = _sanitize_openrouter_quota(payload)
+        return {
+            "ok": True,
+            "provider": "openrouter",
+            "display_name": display_name,
+            "supported": True,
+            "status": "available",
+            "label": "OpenRouter credits",
+            "quota": quota,
+            "message": "OpenRouter quota status loaded.",
+        }
+    except urllib.error.HTTPError as exc:
+        status = "invalid_key" if exc.code in (401, 403) else "unavailable"
+        message = (
+            "OpenRouter rejected the configured API key."
+            if status == "invalid_key"
+            else "OpenRouter quota status is temporarily unavailable."
+        )
+        return {
+            "ok": False,
+            "provider": "openrouter",
+            "display_name": display_name,
+            "supported": True,
+            "status": status,
+            "quota": None,
+            "message": message,
+        }
+    except (TimeoutError, urllib.error.URLError, json.JSONDecodeError, OSError, ValueError):
+        return {
+            "ok": False,
+            "provider": "openrouter",
+            "display_name": display_name,
+            "supported": True,
+            "status": "unavailable",
+            "quota": None,
+            "message": "OpenRouter quota status is temporarily unavailable.",
+        }
 
 
 def _provider_is_oauth(provider_id: str) -> bool:

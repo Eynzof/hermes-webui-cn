@@ -2331,6 +2331,26 @@ main.main.showing-logs > #mainLogs{display:flex;}
    Matches hermes-desktop LLM Providers panel. Card uses --sidebar (surface-1),
    hover rows use --surface (surface-2). Body divider uses a subtle tint. */
 #providersList{gap:12px;}
+.provider-quota-card{
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:linear-gradient(180deg,var(--surface),var(--sidebar));
+  padding:12px 16px;
+  margin-bottom:12px;
+}
+.provider-quota-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.provider-quota-title{font-size:13px;font-weight:650;color:var(--text);line-height:1.2;}
+.provider-quota-subtitle{font-size:11px;color:var(--muted);line-height:1.3;margin-top:2px;}
+.provider-quota-badge{font-size:10.5px;font-weight:650;text-transform:capitalize;padding:2px 8px;border-radius:999px;background:var(--accent-bg);color:var(--accent-text);white-space:nowrap;}
+.provider-quota-body{display:flex;flex-wrap:wrap;gap:8px;}
+.provider-quota-metric{flex:1;min-width:88px;border:1px solid var(--border);border-radius:8px;background:var(--sidebar);padding:8px 10px;}
+.provider-quota-metric span{display:block;font-size:10.5px;color:var(--muted);margin-bottom:2px;}
+.provider-quota-metric strong{display:block;font-size:14px;color:var(--text);font-weight:650;}
+.provider-quota-message{font-size:12px;color:var(--muted);line-height:1.45;}
+.provider-quota-card-available .provider-quota-badge{background:rgba(34,197,94,.12);color:#16a34a;}
+:root.dark .provider-quota-card-available .provider-quota-badge{background:rgba(34,197,94,.16);color:#4ade80;}
+.provider-quota-card-no_key .provider-quota-badge,.provider-quota-card-unsupported .provider-quota-badge{background:rgba(234,179,8,.12);color:var(--warning);}
+.provider-quota-card-invalid_key .provider-quota-badge{background:color-mix(in srgb,var(--error) 12%,transparent);color:var(--error);}
 .provider-card{
   border:1px solid var(--border);
   border-radius:12px;
