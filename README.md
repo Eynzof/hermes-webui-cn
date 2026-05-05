@@ -535,6 +535,7 @@ State lives outside the repo at `~/.hermes/webui-mvp/` by default
 - `CHANGELOG.md` -- release notes per sprint
 - `SPRINTS.md` -- forward sprint plan with CLI + Claude parity targets
 - `THEMES.md` -- theme system documentation, custom theme guide
+- `docs/troubleshooting.md` -- diagnostic flows for common failures (e.g. "AIAgent not available")
 
 ## Contributors
 

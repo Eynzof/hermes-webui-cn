@@ -1,5 +1,15 @@
 # Hermes Web UI -- Changelog
 
+## [v0.51.7] — 2026-05-05 — single-PR docs+dx (#1695)
+
+### Changed
+
+- **#1695 — better diagnostic on `AIAgent not available` (DX + docs).** When the WebUI was launched with a Python that can't import `run_agent.AIAgent`, every chat request raised a bare `ImportError("AIAgent not available -- check that hermes-agent is on sys.path")` with no information about which Python was running, where it was looking, or what to do next. @Patrick-81 reported the symptom on a symlinked install (#1695); the maintainer's response (which Patrick confirmed worked) was a three-step diagnostic flow that we've now baked into the error message itself plus a new `docs/troubleshooting.md`. The error now includes: the running Python interpreter, the `HERMES_WEBUI_AGENT_DIR` env (set vs not set), the relevant `sys.path` entries (those mentioning hermes/agent), the most-common fix (`pip install -e .` in the agent dir), and a pointer to `docs/troubleshooting.md`. Docs entry walks through `ls`/`readlink`/`pip install -e .` diagnostic steps, three common failure modes (not on sys.path, broken symlink, wrong override), and when to file a bug.
+
+### Added
+
+- **`docs/troubleshooting.md`** — new diagnostic-flow doc with one entry to start (`AIAgent not available`); structured as Symptom → Why → Diagnostic commands → Fix → When to file a bug. Linked from README's `## Docs` section. Future failure-mode entries follow the same template.
+
 ## [v0.51.6] — 2026-05-05 — 5-PR full-sweep batch
 
 ### Added

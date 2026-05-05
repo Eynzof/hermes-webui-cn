@@ -59,6 +59,55 @@ def _get_ai_agent():
         except ImportError:
             pass
     return AIAgent
+
+
+def _aiagent_import_error_detail() -> str:
+    """Return a multi-line diagnostic string for the "AIAgent not available" path.
+
+    The bare ImportError ("AIAgent not available -- check that hermes-agent is
+    on sys.path") leaves users guessing at which python is running, where it's
+    looking, and what to fix. We assemble the same evidence a maintainer would
+    ask for first (issue #1695): the python that's running, the agent_dir env
+    var if set, the sys.path entries that mention 'hermes', and the most-common
+    fix (`pip install -e .` in the agent dir).
+
+    Kept as a separate helper so it stays out of the hot path until we actually
+    need to raise — building it on every successful import would be wasted work.
+    """
+    import os as _os
+    import sys as _sys
+
+    lines = ["AIAgent not available -- check that hermes-agent is on sys.path"]
+    lines.append("")
+    lines.append(f"  python:  {_sys.executable}")
+    agent_dir = _os.environ.get("HERMES_WEBUI_AGENT_DIR")
+    if agent_dir:
+        lines.append(f"  HERMES_WEBUI_AGENT_DIR: {agent_dir}")
+    else:
+        lines.append("  HERMES_WEBUI_AGENT_DIR: (not set)")
+
+    # Show only the sys.path entries that look relevant — full sys.path is noisy.
+    relevant = [p for p in _sys.path if "hermes" in p.lower() or "agent" in p.lower()]
+    if relevant:
+        lines.append("  sys.path entries mentioning hermes/agent:")
+        for entry in relevant[:6]:
+            lines.append(f"    - {entry}")
+        if len(relevant) > 6:
+            lines.append(f"    ... and {len(relevant) - 6} more")
+    else:
+        lines.append("  sys.path: (no entries mention hermes or agent)")
+
+    lines.append("")
+    lines.append("  Most common fix: install the agent in editable mode so its modules")
+    lines.append("  appear on sys.path:")
+    lines.append("")
+    lines.append("    cd /path/to/hermes-agent")
+    lines.append("    pip install -e .")
+    lines.append("")
+    lines.append("  Then restart the WebUI.")
+    lines.append("")
+    lines.append('  Full troubleshooting: docs/troubleshooting.md ("AIAgent not available")')
+    return "\n".join(lines)
 from api.models import get_session, title_from
 from api.workspace import set_last_workspace
 
@@ -1958,7 +2007,7 @@ def _run_agent_streaming(
 
             _AIAgent = _get_ai_agent()
             if _AIAgent is None:
-                raise ImportError("AIAgent not available -- check that hermes-agent is on sys.path")
+                raise ImportError(_aiagent_import_error_detail())
 
             # Initialize SessionDB so session_search works in WebUI sessions
             _session_db = None
