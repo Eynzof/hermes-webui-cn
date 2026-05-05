@@ -3966,9 +3966,29 @@ function _preservedCompressionTaskListCardHtml(m, open=false){
 function _preservedCompressionTaskListCardsHtml(messages){
   return (messages||[]).map(m=>_preservedCompressionTaskListCardHtml(m, false)).join('');
 }
+function _latestTodoToolItems(messages){
+  for(let i=(messages||[]).length-1;i>=0;i--){
+    const m=messages[i];
+    if(!m||m.role!=='tool') continue;
+    try{
+      const payload=typeof m.content==='string'?JSON.parse(m.content):m.content;
+      if(payload&&Array.isArray(payload.todos)) return payload.todos;
+    }catch(_){ }
+  }
+  return null;
+}
+function _hasActiveTodoItems(items){
+  return Array.isArray(items) && items.some(item=>{
+    const status=String(item&&item.status||'').trim().toLowerCase();
+    return status==='pending'||status==='in_progress';
+  });
+}
 function _latestPreservedCompressionTaskListMessages(messages){
   const latest=[...(messages||[])].reverse().find(m=>_isPreservedCompressionTaskListMessage(m));
-  return latest?[latest]:[];
+  if(!latest) return [];
+  const latestTodos=_latestTodoToolItems(messages);
+  if(Array.isArray(latestTodos) && !_hasActiveTodoItems(latestTodos)) return [];
+  return [latest];
 }
 function _isSameLocalDay(dateA, dateB){
   return dateA.getFullYear()===dateB.getFullYear()
