@@ -3021,6 +3021,82 @@ function dismissReconnect() {
   $('reconnectBanner').classList.remove('visible');
   clearInflight();
 }
+
+// ── Hermes agent/gateway heartbeat alert (#716) ──
+const AGENT_HEALTH_INTERVAL_MS=30000;
+const AGENT_HEALTH_DISMISSED_KEY='agent-health-dismissed';
+let _agentHealthTimer=null;
+let _agentHealthLastState='unknown';
+function _agentHealthDismissed(){
+  try{return localStorage.getItem(AGENT_HEALTH_DISMISSED_KEY)==='1';}
+  catch(_){return false;}
+}
+function _setAgentHealthDismissed(value){
+  try{
+    if(value)localStorage.setItem(AGENT_HEALTH_DISMISSED_KEY,'1');
+    else localStorage.removeItem(AGENT_HEALTH_DISMISSED_KEY);
+  }catch(_){ }
+}
+function _hideAgentHealthAlert(){
+  const banner=$('agentHealthBanner');
+  if(banner){banner.classList.remove('visible');banner.hidden=true;}
+}
+function _showAgentHealthAlert(payload){
+  if(_agentHealthDismissed()) return;
+  const banner=$('agentHealthBanner');
+  const title=$('agentHealthTitle');
+  const details=$('agentHealthDetails');
+  if(!banner) return;
+  if(title) title.textContent='Hermes agent is not responding';
+  const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
+  if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
+  banner.hidden=false;
+  banner.classList.add('visible');
+}
+function dismissAgentHealthAlert(){
+  _setAgentHealthDismissed(true);
+  _hideAgentHealthAlert();
+}
+async function pollAgentHealth(){
+  if(document.visibilityState !== 'visible') return;
+  try{
+    const payload=await api('/api/health/agent');
+    if(payload.alive === true){
+      _agentHealthLastState='alive';
+      _setAgentHealthDismissed(false);
+      _hideAgentHealthAlert();
+      return;
+    }
+    if(payload.alive === false){
+      _agentHealthLastState='down';
+      _showAgentHealthAlert(payload);
+      return;
+    }
+    if(payload.alive == null){
+      _agentHealthLastState='unknown';
+      _hideAgentHealthAlert();
+    }
+  }catch(_){
+    _agentHealthLastState='unknown';
+    _hideAgentHealthAlert();
+  }
+}
+function startAgentHealthMonitor(){
+  if(document.visibilityState !== 'visible') return;
+  if(_agentHealthTimer) return;
+  void pollAgentHealth();
+  _agentHealthTimer=setInterval(pollAgentHealth, AGENT_HEALTH_INTERVAL_MS);
+}
+function stopAgentHealthMonitor(){
+  if(_agentHealthTimer){clearInterval(_agentHealthTimer);_agentHealthTimer=null;}
+}
+function _syncAgentHealthMonitorVisibility(){
+  if(document.visibilityState === 'visible') startAgentHealthMonitor();
+  else stopAgentHealthMonitor();
+}
+document.addEventListener('visibilitychange',_syncAgentHealthMonitorVisibility);
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startAgentHealthMonitor);
+else startAgentHealthMonitor();
 async function refreshSession() {
   // When the banner is in post-update restart mode, the "Reload" button
   // should do a full page reload — a session refresh would just 502 while

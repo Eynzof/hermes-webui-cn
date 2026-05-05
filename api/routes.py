@@ -479,6 +479,7 @@ from api.helpers import (
     redact_session_data,
     _redact_text,
 )
+from api.agent_health import build_agent_health_payload
 
 
 def _clear_stale_stream_state(session) -> bool:
@@ -2486,6 +2487,9 @@ def handle_get(handler, parsed) -> bool:
 
     if parsed.path == "/health":
         return _handle_health(handler, parsed)
+
+    if parsed.path == "/api/health/agent":
+        return j(handler, build_agent_health_payload())
 
     if parsed.path == "/api/models":
         return j(handler, get_available_models())
