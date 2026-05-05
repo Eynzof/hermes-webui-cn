@@ -1,5 +1,50 @@
 # Hermes Web UI -- Changelog
 
+## [v0.51.2] — 2026-05-04 — 3-PR follow-up batch (deferred from v0.51.1) + sidebar scroll hotfix
+
+### Fixed
+
+- **Sidebar scroll jumps back to 0 on small lists (≤80 sessions)** — PR #1669 added DOM virtualization to `renderSessionListFromCache()` with two flaws for lists below the virtualization threshold: (1) the unconditional scroll listener triggered a full DOM rebuild on every rAF, and (2) `scrollTop` was only restored when `virtualWindow.virtualized` was true (i.e. total > 80 rows). For lists ≤ 80 rows, `scrollTop` dropped to 0 on every scroll event, producing a "scroll keeps jumping back" feel. Two-part fix: (a) always restore `scrollTop` when `listScrollTopBeforeRender > 0` regardless of virtualized flag, (b) short-circuit `_scheduleSessionVirtualizedRender` when total ≤ `SESSION_VIRTUAL_THRESHOLD_ROWS` (saves the wasteful rebuild and is belt-and-suspenders defense). Live verified: production v0.51.1 confirmed broken (scrollTop drops to 0 within 100ms); v0.51.2 confirmed working (holds at 500 across 600ms+). 3 regression tests pin both fixes.
+
+### Added
+
+- **PR #1664** by @Michaelyklam — LLM Wiki status panel (closes #1257). New read-only Insights card showing wiki state (entries, pages, raw files, last updated, last writer) with traffic-light status badge ("Available" / "Empty" / "Unavailable" / "Error"). New `GET /api/wiki/status` endpoint reads `WIKI_PATH` env var or `skills.config.wiki.path` config, returns metadata-only counts. `loadInsights()` parallelizes the wiki status fetch with the existing `/api/insights` call via `Promise.all`, with a `.catch` fallback so wiki failures don't break Insights.
+- **PR #1662** by @Michaelyklam — Logs tab MVP (closes #1455). New top-level Logs tab in nav rail. Allowlisted server-side log file viewer (`agent` / `errors` / `gateway`) with severity highlighting (info/warning/error/debug), tail size selector (100/200/500/1000 lines), auto-refresh, copy-all. New `GET /api/logs` endpoint with strict allowlist + path-traversal guard + bounded 4 MiB tail window. 8 i18n locale entries added.
+- **PR #1587** by @franksong2702 — Filter low-value CLI agent sessions (refs #1013). Source-aware sidebar visibility rules for imported CLI agent sessions: hides empty CLI rows; hides default/untitled CLI rows with fewer than 2 user turns; keeps explicitly-titled CLI sessions; keeps compression-lineage CLI sessions. Treats true CLI-origin rows as external/imported in action menu (keeps pin/move/archive/restore, hides duplicate/delete). New `_isCliSession(session)` helper in static/sessions.js for source classification.
+
+### Pre-release verification
+
+- Full pytest sequential pass: 4429 → **4457 passing** (+28). 0 regressions.
+- JS syntax check on 6 modified `.js` files via `node -c`: all clean.
+- Python syntax check on 9 modified `.py` files: all clean.
+- QA harness: 20 pytest + 11 browser API + `/health` probe — ALL CHECKS PASSED.
+- Browser-driven smoke test on 56-session sidebar:
+  - Logs tab: panel renders with file/tail selectors; 4 test log lines (INFO/WARNING/ERROR/DEBUG) all rendered with correct severity classes.
+  - LLM Wiki card: renders in Insights tab with proper "Unavailable" state and 6-grid metadata layout. Existing Insights chart (#1668) renders unaffected.
+  - `_isCliSession` helper: 6/6 test cases correct (null, empty object, session_source=cli → true, raw_source=CLI → true, source_label=cli → true, raw_source=web → false).
+  - Sidebar scroll: scrollTop=500 holds steady across 100/300/600ms; scroll-to-bottom (1986) holds across 600ms.
+  - Path traversal: `/api/logs?file=../../etc/passwd` correctly returns HTTP 400.
+- Independent review: Opus advisor on stage-298 diff (1336 LOC). 6/6 verification questions resolved cleanly: SSRF safety, path traversal, schema redaction, JS XSS prevention, scroll-fix first-render edge case, CHANGELOG handling. **Verdict: SHIP.** 0 MUST-FIX, 2 SHOULD-FIX absorbed in-release (see below).
+
+### Opus-applied fixes (absorbed in-release)
+
+**From stage-299 absorption (this release):**
+- **Bounded WIKI_PATH walk + forbidden-root guard** (`api/routes.py`): `_LLM_WIKI_MAX_FILES = 10000` caps `rglob` iteration in both `_llm_wiki_count_files` and `_llm_wiki_page_files` (prevents hangs on symlink loops or pathologically-large trees). `_LLM_WIKI_FORBIDDEN_ROOTS` blocklist refuses `/`, `/etc`, `/usr`, `/var`, `/opt`, `/sys`, `/proc` even if `WIKI_PATH` is misconfigured to point at them. Self-DoS prevention: `/api/wiki/status` fires on every Insights tab open via `Promise.all`, and unbounded `rglob` on a misconfigured root would block the endpoint. 6 regression tests pin the constants + behavioral guards.
+- **URL-scheme guard for `docs_url` interpolation** (`static/panels.js`): `rawDocsUrl` is regex-validated against `/^https?:\/\//i` before being interpolated into the `<a href=>` attribute. `esc()` HTML-escapes but doesn't validate URL scheme; `docs_url` is server-controlled today but the contributor scaffolded it for potential config-driven use, so future-proofs against `js:` / `data:` scheme XSS.
+
+### Surgical conflict resolution
+
+All 3 PRs branched off pre-Kanban-v1 master, producing multi-region conflicts in `static/panels.js` and `static/style.css`. Resolved per-conflict surgically rather than via naive keep-both:
+
+- **#1664 panels.js**: kept master's modern `_renderInsights` body (preserves the v0.51.1 chart enhancements from #1668), modified its signature to accept `wikiStatus` as 3rd parameter, AND inserted the two new wiki helper functions (`_formatLlmWikiTimestamp`, `_renderLlmWikiStatus`) before it. Verified single `_renderInsights` definition.
+- **#1664 style.css**: kept master's `.insights-card { margin-bottom: 16px }` (used by other Insights cards) and ADDED all the new `.wiki-status-*` rules. Discarded contributor's modification of `.insights-card` (would have broken #1668 chart card spacing).
+- **#1662 panels.js**: panel-list array union'd to include both `'kanban'` (v0.51.0) and `'logs'` (this PR). Large additive region: kept BOTH the master's Kanban switcher/modal block AND the contributor's Logs panel block. Patched a missing pair of closing braces (`}\n}\n`) at the boundary where the conflict marker truncated `archiveKanbanBoard`.
+- **#1662 style.css**: display-none selector union'd to include `#mainInsights, #mainLogs` AND `:not(.showing-kanban):not(.showing-logs)` chain.
+- **#1587 sessions.js**: kept master's `_isReadOnlySession` and `_sourceKeyForSession` helpers AND added the new `_isCliSession` helper. Patched a missing closing brace on `_sourceKeyForSession` introduced by conflict-marker truncation.
+
+Both #1664 and #1662 rebased branches were force-pushed back to @Michaelyklam's fork via maintainer write access (preserving `Co-authored-by:` attribution). #1587 stayed local since the maintainer token doesn't have write access to franksong2702's fork.
+
+
 ## [v0.51.1] — 2026-05-04 — 11-PR contributor batch from @Michaelyklam
 
 ### Added — 11 PRs from a single overnight burst, all per-PR Phase-0 fit-screened
@@ -182,7 +227,6 @@ This was a large stack of work. Massive thanks to **@ai-ag2026** for the full Ka
 ### Note on closed-as-superseded
 
 PR #1656 (also @Michaelyklam) was closed as superseded by #1657. Both target #1458 Bug #3, both add accept-loop heartbeat + `/health?deep=1` + 503-on-degraded. #1657 adds beyond #1656: state.db connectivity check, projects state check, FD soft-limit raise, and `docs/supervisor.md` watchdog recipe. Same author iterated; the second PR was the keeper.
-
 ## [v0.50.296] — 2026-05-04
 
 ### Fixed (3 PRs — closes #1406, #1617; refs #1362)
@@ -447,7 +491,6 @@ Two stale source-string assertions were broken by #1591's compact() and messages
 - **PR rebase verified** (REBASE-DEFAULT rule): #1586/#1590/#1591/#1592 all on current master (bf7bc6b4 = v0.50.289), zero commits behind. #1464 was 124 commits behind (forked at v0.50.275); rebased cleanly onto master.
 - **Auto-fix on #1464:** ternary inversion + regression test, with `Co-authored-by: Josh Jameson` preserved.
 - **Auto-fix on stage:** widened source-string anchors in two pre-existing brittle tests broken by #1591's structural changes.
-
 
 ## [v0.50.289] — 2026-05-03
 

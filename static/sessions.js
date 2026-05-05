@@ -584,6 +584,24 @@ function _sourceKeyForSession(session) {
   return (session && (session.raw_source || session.source_tag || session.source || '') || '').toLowerCase();
 }
 
+function _isCliSession(session) {
+  if (!session) return false;
+  // session_source is set by upstream normalization for CLI sessions as 'cli'
+  if (session.session_source === 'cli') return true;
+  // Legacy payloads often use raw/source tags to convey the source.
+  const raw = (
+    session.raw_source
+    || session.source_tag
+    || session.source
+    || session.source_label
+    || ''
+  ).toLowerCase();
+  if (raw === 'cli') return true;
+  // If messaging-like, don't classify as legacy CLI even when is_cli_session is true.
+  if (_isMessagingSession(session)) return false;
+  return session.is_cli_session === true;
+}
+
 function _normalizeMessageForCliImportComparison(message) {
   if (!message || typeof message !== 'object') return message;
   const clone = { ...message };
@@ -1281,6 +1299,8 @@ function _openSessionActionMenu(session, anchorEl){
   }
   closeSessionActionMenu();
   const isMessagingSession = _isMessagingSession(session);
+  const isCliSession = _isCliSession(session);
+  const isExternalSession = isMessagingSession || isCliSession;
   const menu=document.createElement('div');
   menu.className='session-action-menu open';
   menu.appendChild(_buildSessionAction(
@@ -1323,7 +1343,7 @@ function _openSessionActionMenu(session, anchorEl){
       }catch(err){showToast(t('session_archive_failed')+err.message);}
     }
   ));
-  if(!isMessagingSession){
+  if(!isExternalSession){
     _appendSessionDuplicateAction(menu, session);
   }
   if(session.active_stream_id){
@@ -1338,7 +1358,7 @@ function _openSessionActionMenu(session, anchorEl){
       }
     ));
   }
-  if(!isMessagingSession){
+  if(!isExternalSession){
     menu.appendChild(_buildSessionAction(
       t('session_delete'),
       t('session_delete_desc'),
@@ -1916,6 +1936,16 @@ function _sessionVirtualSpacer(height, where){
 
 function _scheduleSessionVirtualizedRender(){
   if(_renamingSid||_sessionVirtualScrollRaf) return;
+  // Skip the re-render if the list is below the virtualization threshold —
+  // there's no virtual window to recompute, and re-rendering would just
+  // rebuild the whole DOM on every scroll tick. Without this guard, the
+  // unconditional scroll listener (attached for any list) caused
+  // user-facing scroll jumps on small lists. (#1669 follow-up)
+  const list=_sessionVirtualScrollList;
+  if(list){
+    const total=Number(list.dataset.sessionVirtualTotal||0);
+    if(total>0&&total<=SESSION_VIRTUAL_THRESHOLD_ROWS) return;
+  }
   _sessionVirtualScrollRaf=requestAnimationFrame(()=>{_sessionVirtualScrollRaf=0;renderSessionListFromCache();});
 }
 
@@ -2182,7 +2212,13 @@ function renderSessionListFromCache(){
   }
   if(virtualAnchorScrollTop!==null){
     list.scrollTop=virtualAnchorScrollTop;
-  }else if(virtualWindow.virtualized){
+  }else if(listScrollTopBeforeRender>0){
+    // Always restore the user's scroll position after re-render, regardless
+    // of whether the virtualization window applies. Lists below the
+    // virtualization threshold (≤80 rows) still have their DOM rebuilt by
+    // every renderSessionListFromCache() call, and without this restore the
+    // scrollTop drops to 0 — producing a "scroll keeps jumping back" feel
+    // when the list scrolls naturally. Fixed for #1669 follow-up.
     list.scrollTop=listScrollTopBeforeRender;
   }
   // Select mode toggle button (only when NOT in select mode)

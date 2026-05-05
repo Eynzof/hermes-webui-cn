@@ -2156,8 +2156,9 @@ main.main > #mainTasks,
 main.main > #mainKanban,
 main.main > #mainWorkspaces,
 main.main > #mainProfiles,
-main.main > #mainInsights{display:none;}
-main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights) > #mainChat{display:flex;}
+main.main > #mainInsights,
+main.main > #mainLogs{display:none;}
+main.main:not(.showing-settings):not(.showing-skills):not(.showing-memory):not(.showing-tasks):not(.showing-kanban):not(.showing-workspaces):not(.showing-profiles):not(.showing-insights):not(.showing-logs) > #mainChat{display:flex;}
 main.main.showing-settings > #mainSettings{display:flex;overflow-y:auto;}
 main.main.showing-skills > #mainSkills{display:flex;}
 main.main.showing-memory > #mainMemory{display:flex;}
@@ -2165,6 +2166,7 @@ main.main.showing-tasks > #mainTasks{display:flex;}
 main.main.showing-kanban > #mainKanban{display:flex;}
 main.main.showing-workspaces > #mainWorkspaces{display:flex;}
 main.main.showing-profiles > #mainProfiles{display:flex;}
+main.main.showing-logs > #mainLogs{display:flex;}
 #mainSettings{overflow-y:auto;}
 
 /* Sidebar menu (lives in the left sidebar under the cog panel) */
@@ -3142,6 +3144,21 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .insights-stat-label{font-size:11px;color:var(--muted);margin-top:4px;}
 .insights-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
 .insights-card{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;}
+.wiki-status-card{margin-bottom:16px;}
+.wiki-status-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.wiki-status-sub{font-size:11px;color:var(--muted);margin-top:-4px;}
+.wiki-status-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;border:1px solid var(--border);color:var(--muted);background:var(--surface);}
+.wiki-status-badge.ok{color:var(--accent-text);background:var(--accent-bg);border-color:var(--accent-bg-strong);}
+.wiki-status-badge.warn{color:#e8a030;background:rgba(232,160,48,.12);border-color:rgba(232,160,48,.28);}
+.wiki-status-badge.err{color:var(--error,#e05);background:color-mix(in srgb,var(--error,#e05) 10%,transparent);border-color:color-mix(in srgb,var(--error,#e05) 30%,transparent);}
+.wiki-status-note{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:12px;}
+.wiki-status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px;}
+.wiki-status-grid div{display:flex;flex-direction:column;gap:3px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);min-width:0;}
+.wiki-status-grid span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.wiki-status-grid strong{font-size:13px;color:var(--text);font-weight:650;overflow-wrap:anywhere;}
+.wiki-status-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);padding-top:10px;}
+.wiki-status-footer a{color:var(--accent);text-decoration:none;font-weight:600;white-space:nowrap;}
+.wiki-status-footer a:hover{text-decoration:underline;}
 .insights-card-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;}
 .insights-table{width:100%;font-size:12px;}
 .insights-table-head{display:grid;grid-template-columns:1fr 80px;padding:4px 0;border-bottom:1px solid var(--border);font-weight:600;color:var(--muted);font-size:11px;}
@@ -3450,3 +3467,27 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
   .kanban-modal{padding:16px 16px 14px;border-radius:14px;}
   .kanban-modal-row-inline{flex-direction:column;gap:0;}
 }
+
+/* ── Logs panel (#1455) ───────────────────────────────────────────────────── */
+main.main.showing-logs > #mainLogs{display:flex;}
+.logs-control-panel{display:flex;flex-direction:column;gap:8px;padding:12px;overflow-y:auto;}
+.logs-control-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+.logs-control-panel select{width:100%;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12px;}
+.logs-check-row{display:flex;align-items:center;gap:8px;color:var(--text);font-size:12px;line-height:1.4;}
+.logs-check-row input{accent-color:var(--accent);}
+.logs-copy{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,color .15s;}
+.logs-copy:hover{background:var(--hover-bg);border-color:var(--border2);}
+.logs-copy.compact{padding:6px 10px;white-space:nowrap;}
+.logs-status{font-size:12px;color:var(--muted);margin-top:3px;font-family:'SF Mono',ui-monospace,monospace;}
+.logs-main-body{padding:18px 24px;}
+.logs-content{max-width:1200px;}
+.logs-output{min-height:320px;max-height:calc(100vh - 170px);overflow:auto;background:var(--code-bg);border:1px solid var(--border);border-radius:12px;padding:12px 0;font-family:'SF Mono','Fira Code',ui-monospace,monospace;font-size:12px;line-height:1.55;color:var(--pre-text);white-space:pre;}
+.logs-output.wrap{white-space:pre-wrap;overflow-wrap:anywhere;}
+.log-line{padding:0 14px;min-height:1.55em;border-left:3px solid transparent;}
+.log-line:hover{background:rgba(255,255,255,.04);}
+.log-line-error{color:var(--error,#ef4444);border-left-color:var(--error,#ef4444);background:color-mix(in srgb,var(--error,#ef4444) 8%,transparent);}
+.log-line-warning{color:#f59e0b;border-left-color:#f59e0b;background:rgba(245,158,11,.08);}
+.log-line-info{color:var(--pre-text);}
+.log-line-debug{color:var(--muted);opacity:.75;}
+.logs-empty,.logs-hint{margin:8px 14px;padding:12px;border:1px solid var(--border);border-radius:8px;color:var(--muted);background:var(--surface);white-space:normal;font-family:var(--font-ui,system-ui,sans-serif);font-size:12px;}
+.logs-hint.warn{color:#f59e0b;border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.08);}

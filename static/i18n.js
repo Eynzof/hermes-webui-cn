@@ -532,6 +532,7 @@ const LOCALES = {
     tab_insights: 'Insights',
     tab_dashboard: 'Hermes Dashboard',
     dashboard_loopback_warning: 'Dashboard is loopback-only on the server. Either browse from the server itself or restart it with --host 0.0.0.0 (insecure).',
+    tab_logs: 'Logs',
     tab_settings: 'Settings',
     new_conversation: 'New conversation',
     filter_conversations: 'Filter conversations...',
@@ -552,6 +553,21 @@ const LOCALES = {
     new_skill: 'New skill',
     personal_memory: 'Personal memory',
     current_task_list: 'Current task list',
+    // Logs
+    logs_title: 'Logs',
+    logs_file: 'File',
+    logs_tail: 'Tail',
+    logs_auto_refresh: 'Auto-refresh (5s)',
+    logs_wrap: 'Wrap lines',
+    logs_copy_all: 'Copy all',
+    logs_empty: 'No log lines yet.',
+    logs_loading: 'Loading logs…',
+    logs_load_failed: 'Logs failed to load',
+    logs_status_idle: 'Choose a log file to view recent lines.',
+    logs_no_mtime: 'not written yet',
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',
+    logs_copied: 'Logs copied',
+
     // Insights
     insights_title: 'Usage Analytics',
     insights_sessions: 'Sessions',
@@ -1525,6 +1541,7 @@ const LOCALES = {
     tab_insights: 'インサイト',
     tab_dashboard: 'Hermes ダッシュボード',
     dashboard_loopback_warning: 'ダッシュボードはサーバー上のループバック専用です。サーバー上で閲覧するか、--host 0.0.0.0（安全ではありません）で再起動してください。',
+    tab_logs: 'Logs',
     tab_settings: '設定',
     new_conversation: '新しい会話',
     filter_conversations: '会話を絞り込み...',
@@ -1545,6 +1562,21 @@ const LOCALES = {
     new_skill: '新規スキル',
     personal_memory: '個人メモリ',
     current_task_list: '現在のタスクリスト',
+    // Logs
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
+
     // Insights
     insights_title: '使用状況分析',
     insights_sessions: 'セッション',
@@ -2357,7 +2389,22 @@ const LOCALES = {
     tab_insights: 'Аналитика',
     tab_dashboard: 'Панель Hermes',
     dashboard_loopback_warning: 'Панель доступна только через loopback на сервере. Откройте её с самого сервера или перезапустите с --host 0.0.0.0 (небезопасно).',
+    tab_logs: 'Logs',
     tab_settings: 'Настройки',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: 'Новая беседа',
     filter_conversations: 'Фильтр бесед...',
     session_time_unknown: 'Неизвестно',
@@ -3285,7 +3332,22 @@ const LOCALES = {
     tab_insights: 'Analíticas',
     tab_dashboard: 'Panel de Hermes',
     dashboard_loopback_warning: 'El panel solo usa loopback en el servidor. Navega desde el propio servidor o reinícialo con --host 0.0.0.0 (inseguro).',
+    tab_logs: 'Logs',
     tab_settings: 'Ajustes',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: 'Nueva conversación',
     filter_conversations: 'Filtrar conversaciones...',
     session_time_unknown: 'Desconocido',
@@ -4201,7 +4263,22 @@ const LOCALES = {
     tab_insights: 'Statistiken',
     tab_dashboard: 'Hermes-Dashboard',
     dashboard_loopback_warning: 'Das Dashboard ist auf dem Server nur per Loopback erreichbar. Öffne es direkt auf dem Server oder starte es mit --host 0.0.0.0 neu (unsicher).',
+    tab_logs: 'Logs',
     tab_settings: 'Einstellungen',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: 'Neuer Chat',
     filter_conversations: 'Chats filtern...',
     scheduled_jobs: 'Geplante Aufgaben',
@@ -5140,7 +5217,22 @@ const LOCALES = {
     dashboard_loopback_warning: '仪表盘在服务器上仅限 loopback 访问。请从服务器本机浏览，或使用 --host 0.0.0.0 重启（不安全）。',
     tab_workspaces: '工作区',
     tab_profiles: '配置',
+    tab_logs: '日志',
     tab_settings: '设置',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: '新建对话',
     filter_conversations: '筛选对话…',
     session_time_unknown: '未知',
@@ -6025,6 +6117,7 @@ const LOCALES = {
     tab_insights: '統計',
     tab_dashboard: 'Hermes 儀表板',
     dashboard_loopback_warning: '儀表板在伺服器上僅限 loopback 存取。請從伺服器本機瀏覽，或使用 --host 0.0.0.0 重新啟動（不安全）。',
+    tab_logs: 'Logs',
     tab_workspaces: '\u5de5\u4f5c\u5340',
     new_conversation: '新對話',
     filter_conversations: '篩選對話',
@@ -7094,7 +7187,22 @@ const LOCALES = {
     tab_insights: 'Estatísticas',
     tab_dashboard: 'Painel Hermes',
     dashboard_loopback_warning: 'O painel é somente loopback no servidor. Navegue pelo próprio servidor ou reinicie com --host 0.0.0.0 (inseguro).',
+    tab_logs: 'Logs',
     tab_settings: 'Configurações',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: 'Nova conversa',
     filter_conversations: 'Filtrar conversas...',
     session_time_unknown: 'Desconhecido',
@@ -7986,7 +8094,22 @@ const LOCALES = {
     tab_insights: '통계',
     tab_dashboard: 'Hermes 대시보드',
     dashboard_loopback_warning: '대시보드는 서버에서 loopback 전용입니다. 서버 자체에서 접속하거나 --host 0.0.0.0(안전하지 않음)으로 다시 시작하세요.',
+    tab_logs: 'Logs',
     tab_settings: '설정',
+
+    logs_title: 'Logs',  // TODO: translate
+    logs_file: 'File',  // TODO: translate
+    logs_tail: 'Tail',  // TODO: translate
+    logs_auto_refresh: 'Auto-refresh (5s)',  // TODO: translate
+    logs_wrap: 'Wrap lines',  // TODO: translate
+    logs_copy_all: 'Copy all',  // TODO: translate
+    logs_empty: 'No log lines yet.',  // TODO: translate
+    logs_loading: 'Loading logs…',  // TODO: translate
+    logs_load_failed: 'Logs failed to load',  // TODO: translate
+    logs_status_idle: 'Choose a log file to view recent lines.',  // TODO: translate
+    logs_no_mtime: 'not written yet',  // TODO: translate
+    logs_truncated_hint: 'Showing the tail of a large log file; older bytes were skipped to keep memory bounded.',  // TODO: translate
+    logs_copied: 'Logs copied',  // TODO: translate
     new_conversation: '새 대화',
     filter_conversations: '대화 필터…',
     session_time_unknown: 'Unknown',

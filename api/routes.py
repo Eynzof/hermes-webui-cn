@@ -22,7 +22,11 @@ import re
 from pathlib import Path
 from contextlib import closing
 from urllib.parse import parse_qs
-from api.agent_sessions import MESSAGING_SOURCES
+from api.agent_sessions import (
+    MESSAGING_SOURCES,
+    is_cli_session_row,
+    is_cli_session_row_visible,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1185,6 +1189,44 @@ def _session_sort_timestamp(session: dict) -> float:
     ) or 0.0
 
 
+def _is_cli_session_for_settings(session: dict) -> bool:
+    """Return True for importable CLI sessions that are safe to classify for settings."""
+    if not isinstance(session, dict):
+        return False
+    if is_cli_session_row(session):
+        return True
+
+    # Fallback for legacy local copies that had weak/empty metadata:
+    # keep this conservative so messaging sessions do not collapse incorrectly.
+    if not session.get("is_cli_session"):
+        return False
+    source = str(session.get("source") or "").strip().lower()
+    if source in MESSAGING_SOURCES:
+        return False
+    title = str(session.get("title") or "").strip().lower()
+    return title in ("", "untitled", "cli", "cli session") or title.endswith(" session") and (
+        not source or source == "cli"
+    )
+
+
+CLI_VISIBLE_SESSION_CAP = 20
+
+
+def _cap_recent_cli_sessions(sessions: list[dict], cli_cap: int = CLI_VISIBLE_SESSION_CAP) -> list[dict]:
+    """Keep only the most recent CLI-visible sessions after filtering."""
+    if cli_cap <= 0:
+        return sessions
+    kept = []
+    cli_seen = 0
+    for session in sessions:
+        if _is_cli_session_for_settings(session):
+            cli_seen += 1
+            if cli_seen > cli_cap:
+                continue
+        kept.append(session)
+    return kept
+
+
 def _merge_cli_sidebar_metadata(ui_session: dict, cli_meta: dict) -> dict:
     """Merge source-of-truth CLI metadata into a sidebar session row.
 
@@ -1629,7 +1671,293 @@ button:hover{background:rgba(124,185,255,.25)}
 <script src="static/login.js?v={{WEBUI_VERSION}}"></script>
 </body></html>"""
 
+
+# ── Logs endpoint ─────────────────────────────────────────────────────────────
+_LOG_FILE_WHITELIST = {
+    "agent": "agent.log",
+    "errors": "errors.log",
+    "gateway": "gateway.log",
+}
+_LOG_TAIL_VALUES = {100, 200, 500, 1000}
+_LOG_DEFAULT_TAIL = 200
+_LOG_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _normalize_logs_tail(raw_tail) -> int:
+    try:
+        tail = int(str(raw_tail or "").strip())
+    except (TypeError, ValueError):
+        return _LOG_DEFAULT_TAIL
+    return tail if tail in _LOG_TAIL_VALUES else _LOG_DEFAULT_TAIL
+
+
+def _handle_logs(handler, parsed) -> bool:
+    """Return a bounded tail window for an active-profile Hermes log file."""
+    query = parse_qs(parsed.query)
+    file_key = (query.get("file", ["agent"])[0] or "agent").strip().lower()
+    filename = _LOG_FILE_WHITELIST.get(file_key)
+    if not filename:
+        return bad(handler, "Unknown log file", status=400)
+
+    tail = _normalize_logs_tail(query.get("tail", [None])[0])
+    try:
+        from api.profiles import get_active_hermes_home
+
+        hermes_home = Path(get_active_hermes_home()).expanduser()
+    except Exception:
+        hermes_home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")).expanduser()
+
+    log_dir = hermes_home / "logs"
+    log_path = log_dir / filename
+    try:
+        # Defense in depth: the filename is hardcoded above, but keep the final
+        # path anchored under the active profile's logs directory.
+        if log_path.resolve(strict=False).parent != log_dir.resolve(strict=False):
+            return bad(handler, "Invalid log file", status=400)
+        if not log_path.exists() or not log_path.is_file():
+            return j(handler, {
+                "file": file_key,
+                "tail": tail,
+                "lines": [],
+                "truncated": False,
+                "total_bytes": 0,
+                "mtime": None,
+                "hint": f"Log file for {file_key} not found yet.",
+            })
+        st = log_path.stat()
+        total_bytes = int(st.st_size)
+        read_bytes = min(total_bytes, _LOG_MAX_BYTES)
+        with log_path.open("rb") as fh:
+            if total_bytes > read_bytes:
+                fh.seek(total_bytes - read_bytes)
+            raw = fh.read(read_bytes)
+        text = raw.decode("utf-8", errors="replace")
+        lines = text.splitlines()[-tail:]
+        return j(handler, {
+            "file": file_key,
+            "tail": tail,
+            "lines": lines,
+            "truncated": total_bytes > read_bytes,
+            "total_bytes": total_bytes,
+            "mtime": st.st_mtime,
+            "hint": "",
+        })
+    except Exception as exc:
+        logger.exception("Failed to read whitelisted log file %s", file_key)
+        return bad(handler, _sanitize_error(exc), status=500)
+
 # ── Insights endpoint ──────────────────────────────────────────────────────────
+
+_LLM_WIKI_DOCS_URL = "https://hermes-agent.nousresearch.com/docs/user-guide/skills/bundled/research/research-llm-wiki"
+_LLM_WIKI_PAGE_DIRS = ("entities", "concepts", "comparisons", "queries")
+
+
+def _llm_wiki_active_hermes_home() -> Path:
+    try:
+        from api.profiles import get_active_hermes_home
+        return Path(get_active_hermes_home()).expanduser()
+    except Exception:
+        return Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))).expanduser()
+
+
+def _llm_wiki_env_file_path(hermes_home: Path) -> str | None:
+    env_path = hermes_home / ".env"
+    if not env_path.exists() or not env_path.is_file():
+        return None
+    try:
+        for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            if key.strip() != "WIKI_PATH":
+                continue
+            value = value.strip().strip('"').strip("'")
+            return value or None
+    except Exception:
+        return None
+    return None
+
+
+def _llm_wiki_get_config_path_value(config: dict, dotted_key: str) -> str | None:
+    if not isinstance(config, dict):
+        return None
+    if dotted_key in config and config.get(dotted_key):
+        return str(config.get(dotted_key))
+    cur = config
+    for part in dotted_key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return str(cur) if cur else None
+
+
+def _llm_wiki_config_path() -> str | None:
+    try:
+        from api.config import get_config as _get_cfg
+        cfg = _get_cfg()
+    except Exception:
+        return None
+    return (
+        _llm_wiki_get_config_path_value(cfg, "skills.config.wiki.path")
+        or _llm_wiki_get_config_path_value(cfg, "wiki.path")
+    )
+
+
+# Cap WIKI walks to prevent self-DoS if WIKI_PATH points at /, /etc, /home, etc.
+# Real LLM wikis have under a few thousand files; 10k is generous and catches misconfig.
+_LLM_WIKI_MAX_FILES = 10000
+# Refuse to walk these system roots even if explicitly configured.
+_LLM_WIKI_FORBIDDEN_ROOTS = frozenset(
+    str(Path(p).expanduser().resolve()) for p in ("/", "/etc", "/usr", "/var", "/opt", "/sys", "/proc")
+)
+
+
+def _llm_wiki_resolve_path() -> tuple[Path, str, bool]:
+    hermes_home = _llm_wiki_active_hermes_home()
+    raw = os.getenv("WIKI_PATH") or _llm_wiki_env_file_path(hermes_home)
+    source = "WIKI_PATH" if raw else "default"
+    configured = bool(raw)
+    if not raw:
+        raw = _llm_wiki_config_path()
+        if raw:
+            source = "skills.config.wiki.path"
+            configured = True
+    if not raw:
+        raw = "~/wiki"
+    return Path(os.path.expandvars(raw)).expanduser(), source, configured
+
+
+def _llm_wiki_safe_iso(ts: float | None) -> str | None:
+    if not ts:
+        return None
+    try:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    except Exception:
+        return None
+
+
+def _llm_wiki_count_files(root: Path) -> int:
+    if not root.exists() or not root.is_dir():
+        return 0
+    # Defense in depth: refuse to walk forbidden system roots even if WIKI_PATH
+    # was set to one. The endpoint is auth-gated but a misconfigured server
+    # shouldn't self-DoS by rglob'ing all of /etc on every Insights load.
+    try:
+        if str(root.resolve()) in _LLM_WIKI_FORBIDDEN_ROOTS:
+            return 0
+    except Exception:
+        return 0
+    count = 0
+    iterated = 0
+    for item in root.rglob("*"):
+        iterated += 1
+        if iterated > _LLM_WIKI_MAX_FILES:
+            break  # bounded — prevents hangs on symlink loops or huge trees
+        try:
+            if item.is_file() and not any(part.startswith(".") for part in item.relative_to(root).parts):
+                count += 1
+        except Exception:
+            continue
+    return count
+
+
+def _llm_wiki_page_files(wiki_path: Path) -> list[Path]:
+    pages: list[Path] = []
+    # Defense in depth: refuse forbidden system roots.
+    try:
+        if str(wiki_path.resolve()) in _LLM_WIKI_FORBIDDEN_ROOTS:
+            return pages
+    except Exception:
+        return pages
+    iterated = 0
+    for dirname in _LLM_WIKI_PAGE_DIRS:
+        section = wiki_path / dirname
+        if not section.exists() or not section.is_dir():
+            continue
+        for item in section.rglob("*.md"):
+            iterated += 1
+            if iterated > _LLM_WIKI_MAX_FILES:
+                return pages  # bounded
+            try:
+                rel = item.relative_to(section)
+                if item.is_file() and not any(part.startswith(".") for part in rel.parts):
+                    pages.append(item)
+            except Exception:
+                continue
+    return pages
+
+
+def _build_llm_wiki_status() -> dict:
+    """Return private-safe LLM Wiki status metadata without reading page bodies."""
+    try:
+        wiki_path, path_source, path_configured = _llm_wiki_resolve_path()
+        base = {
+            "available": False,
+            "enabled": False,
+            "status": "missing",
+            "entry_count": 0,
+            "page_count": 0,
+            "raw_source_count": 0,
+            "last_updated": None,
+            "last_writer": None,
+            "path_configured": path_configured,
+            "path_source": path_source,
+            "toggle_available": False,
+            "toggle_reason": "Hermes Agent exposes WIKI_PATH/wiki.path for location, but no stable on/off config flag is currently available.",
+            "docs_url": _LLM_WIKI_DOCS_URL,
+        }
+        if not wiki_path.exists():
+            return base
+        if not wiki_path.is_dir():
+            base["status"] = "not_directory"
+            return base
+
+        page_files = _llm_wiki_page_files(wiki_path)
+        status_files = [p for p in (wiki_path / "SCHEMA.md", wiki_path / "index.md", wiki_path / "log.md") if p.exists() and p.is_file()]
+        status_files.extend(page_files)
+        latest = None
+        for item in status_files:
+            try:
+                mtime = item.stat().st_mtime
+            except Exception:
+                continue
+            latest = mtime if latest is None else max(latest, mtime)
+
+        base.update({
+            "available": True,
+            "enabled": True,
+            "status": "ready" if page_files else "empty",
+            "entry_count": len(page_files),
+            "page_count": len(page_files),
+            "raw_source_count": _llm_wiki_count_files(wiki_path / "raw"),
+            "last_updated": _llm_wiki_safe_iso(latest),
+        })
+        return base
+    except Exception as exc:
+        return {
+            "available": False,
+            "enabled": False,
+            "status": "error",
+            "entry_count": 0,
+            "page_count": 0,
+            "raw_source_count": 0,
+            "last_updated": None,
+            "last_writer": None,
+            "path_configured": False,
+            "path_source": "unknown",
+            "toggle_available": False,
+            "toggle_reason": "Unable to inspect LLM Wiki status safely.",
+            "docs_url": _LLM_WIKI_DOCS_URL,
+            "error": type(exc).__name__,
+        }
+
+
+def _handle_llm_wiki_status(handler, parsed) -> bool:
+    j(handler, _build_llm_wiki_status())
+    return True
+
 
 def _handle_insights(handler, parsed) -> bool:
     """Return usage analytics from local WebUI session data."""
@@ -2143,7 +2471,7 @@ def handle_get(handler, parsed) -> bool:
             handler.end_headers()
         return True
 
-    # ── Insights ──
+    # ── Insights / knowledge status ──
     if parsed.path == "/api/insights":
         return _handle_insights(handler, parsed)
 
@@ -2151,6 +2479,10 @@ def handle_get(handler, parsed) -> bool:
         from api.kanban_bridge import handle_kanban_get
 
         return handle_kanban_get(handler, parsed)
+    if parsed.path == "/api/wiki/status":
+        return _handle_llm_wiki_status(handler, parsed)
+    if parsed.path == "/api/logs":
+        return _handle_logs(handler, parsed)
 
     if parsed.path == "/health":
         return _handle_health(handler, parsed)
@@ -2431,7 +2763,8 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/api/sessions":
         webui_sessions = all_sessions()
         settings = load_settings()
-        if settings.get("show_cli_sessions"):
+        show_cli_sessions = bool(settings.get("show_cli_sessions"))
+        if show_cli_sessions:
             cli = get_cli_sessions()
             cli_by_id = {s["session_id"]: s for s in cli}
             for s in webui_sessions:
@@ -2446,12 +2779,14 @@ def handle_get(handler, parsed) -> bool:
                     for key in ("source_tag", "raw_source", "session_source", "source_label"):
                         if not s.get(key) and meta.get(key):
                             s[key] = meta[key]
+            # Apply the same CLI visibility semantics to imported local copies so
+            # low-value imported artifacts do not leak into the sidebar.
+            webui_sessions = [s for s in webui_sessions if is_cli_session_row_visible(s)]
             webui_ids = {s["session_id"] for s in webui_sessions}
             from api.models import _hide_from_default_sidebar as _cron_hide
-            deduped_cli = [s for s in cli
-                           if s["session_id"] not in webui_ids
-                           and not _cron_hide(s)]
+            deduped_cli = [s for s in cli if s["session_id"] not in webui_ids and is_cli_session_row_visible(s) and not _cron_hide(s)]
         else:
+            webui_sessions = [s for s in webui_sessions if not _is_cli_session_for_settings(s)]
             deduped_cli = []
         merged = webui_sessions + deduped_cli
         merged.sort(
@@ -2483,6 +2818,8 @@ def handle_get(handler, parsed) -> bool:
                       if _profiles_match(s.get("profile"), active_profile)]
             other_profile_count = len(merged) - len(scoped)
         scoped = _keep_latest_messaging_session_per_source(scoped)
+        if show_cli_sessions:
+            scoped = _cap_recent_cli_sessions(scoped, cli_cap=CLI_VISIBLE_SESSION_CAP)
         safe_merged = []
         for s in scoped:
             item = dict(s)
