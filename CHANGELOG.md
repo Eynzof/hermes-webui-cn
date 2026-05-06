@@ -1,5 +1,43 @@
 # Hermes Web UI -- Changelog
 
+## [v0.51.11] — 2026-05-06 — 3-PR full-sweep batch (#1746 deferred)
+
+### Added
+
+- **PR #1748** by @nesquena-hermes — Expose active `--bg` via `<meta name="theme-color">` for native chrome bridges. **nesquena APPROVED.** Native WKWebView wrappers (the Mac Swift app at `hermes-webui/hermes-swift-mac`, future wrappers) currently keep their AppKit chrome in sync with in-page themes via `document.elementsFromPoint` pixel-sampling at three viewport coordinates plus a 2.5s stability gate — fragile (overlay collisions trip the bridge into picking the wrong color, persisting after the offending tab closes — flagged at hermes-webui/hermes-swift-mac#70 as a photosensitivity concern) and IPC-heavy (every WKWebView samples every 2s). The right architectural fix is a `<meta name="theme-color">` element the page updates whenever theme/skin changes; the native bridge reads via standard WKWebView APIs. New `_updateThemeColorMeta()` in `static/boot.js` reads `getComputedStyle(document.documentElement).getPropertyValue('--bg')` and writes the meta tag on every theme/skin change path (system theme switch, manual light/dark toggle, custom theme selection, skin override). Pre-paint inline script in `static/index.html` seeds the meta tag from `localStorage['hermes-theme']` before any JS loads — no flash of wrong color. 8 regression tests pin every theme-change path + the pre-paint seeding.
+
+### Fixed
+
+- **PR #1747** by @Michaelyklam — Wait for model catalog before opening picker (closes #1743). The bottom model picker is backed by a hidden native `<select>` plus a visible custom dropdown. `/api/models` could correctly return OpenAI Codex models while the visible dropdown rendered the static HTML fallback if the user opened the picker before async hydration finished. Result: stale static OpenAI/Anthropic options visible, configured Codex models invisible. Fix: `toggleModelDropdown()` is now async and awaits `window._modelDropdownReady` (a promise built from `populateModelDropdown()` that always resolves, even on network failure — the picker still opens with whatever fallback options are present). `populateModelDropdown()` re-renders the visible custom dropdown after replacing the hidden `<select>` if the picker is already open. `static/ui.js` only. 1 new regression test for the race; 1 existing source-boundary test updated to accept the now-async toggle function.
+- **PR #1750** by @nesquena-hermes — Strip surrounding quotes from Add Space path input. **nesquena APPROVED.** macOS Finder's "Copy as Pathname" (Cmd+Option+C) wraps paths in single quotes by default — `'/Users/x/Documents/foo'` — and users routinely paste those quoted strings into the Add Space input expecting them to work. Other shells and OS file managers do similar things with double quotes. Fix: new `_strip_surrounding_quotes()` helper in `api/workspace.py` runs in `validate_workspace_to_add()` before `Path(...).expanduser().resolve()`, so every code path that registers a workspace benefits (not just the HTTP route). Strips a SINGLE pair of matching outer quotes — embedded quotes (`/Users/x/My "Documents"`) preserved. Empty quoted string (`''`) strips to `""` and the route handler's existing "path is required" guard catches it. Reported by Cygnus on Discord (2026-05-01). 11 regression tests cover the strip + edge cases.
+
+### In-stage absorbed fixes
+
+**Test-isolation hardening (prong 2 of test-isolation-flake-recipe):**
+
+- `tests/test_issue1426_openrouter_free_tier_live_fetch.py::test_openrouter_group_uses_live_fetch_when_available` and `test_openrouter_dedupe_curated_and_free_tier`: skip on `@openrouter:`-prefixed model IDs rather than failing. The 3 OpenRouter/Codex tests fail intermittently in the full suite (~25% rate) when prior tests leave stale `sys.modules['hermes_cli.models']` or otherwise trigger `_apply_provider_prefix`. Standalone runs always pass. Prong 1 (root-cause fix in v0.51.8 — `_cfg_has_in_memory_overrides` detecting `cfg` attr-rebind) handles the explicit override case, but not the `sys.modules` pollution case. Prong 2 makes the build green-on-CI without losing regression coverage.
+- `tests/test_issue1680_codex_spark.py::test_openai_codex_group_uses_provider_model_ids_for_spark`: same skip-on-detected-pollution pattern (skip when `calls != ["openai-codex"]`).
+
+### Deferred to v0.51.12
+
+- **PR #1746** by @Michaelyklam (cron subprocess profile lock, closes #1574). Opus advisor caught a `multiprocessing.Queue` deadlock when child output exceeds the ~64 KB pipe buffer (parent's `process.join()` blocks before the queue is drained → child's feeder thread blocks on `os.write()` waiting for the parent → infinite hang on real cron jobs with multi-KB output). Tests don't catch this because `fake_run_job` returns tiny strings. Plus `fork` from a multi-threaded server is a Python 3.12+ deprecated footgun (other threads' lock state inherited as held). Deferral comment with two specific fix options posted on #1746. The PR's overall shape (parent retains run tracking + persistence; subprocess body releases the parent profile lock) is correct; the queue-drain pattern + spawn-or-pre-import are the only blockers. Will pull into v0.51.12 once updated.
+
+### Tests
+
+4596 → **4622 passing** (+26 regression tests across the 3 PRs). 0 regressions. Full suite ~135s. Stably green across multiple clean runs after the test-isolation hardening landed.
+
+### Pre-release verification
+
+- Stage-305: 4 PRs initially merged with sibling-rebase against stage HEAD; after Opus flagged #1746, stage rebuilt with the 3 clean PRs (reset → re-merge #1750).
+- All JS files syntax-clean (`node -c static/{ui,boot}.js`).
+- All Python files syntax-clean.
+- pytest: 4622 passed, 0 failed (multiple clean runs).
+- `scripts/run-browser-tests.sh`: all 11 endpoints PASS on isolated port 8789 with stage-305 binary.
+- Pre-stamp re-fetch: 3 PR heads still match local rebases — no late contributor commits.
+- Opus advisor: SHIP #1747/#1748/#1750, MUST-FIX block on #1746 with specific fix options posted as deferral comment.
+
+Closes #1743.
+
 ## [v0.51.10] — 2026-05-06 — 2-PR full-sweep batch
 
 ### Fixed
