@@ -199,6 +199,94 @@ def test_cron_run_does_not_silently_swallow_profile_resolution_errors():
     )
 
 
+def test_webui_installs_profile_context_on_in_process_scheduler_run_job(tmp_path, monkeypatch):
+    """If WebUI ever runs cron.scheduler.tick in-process, scheduled run_job calls
+    must execute under the job's selected profile home, not the process-global
+    HERMES_HOME that happened to be active when the scheduler thread fired.
+    """
+    import types
+
+    from api import profiles as p
+
+    default_home = tmp_path / "home"
+    research_home = default_home / "profiles" / "research"
+    research_home.mkdir(parents=True)
+    events = []
+
+    class Ctx:
+        def __init__(self, home):
+            self.home = str(home)
+
+        def __enter__(self):
+            events.append(("enter", self.home))
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append(("exit", self.home))
+            return False
+
+    cron_pkg = types.ModuleType("cron")
+    cron_pkg.__path__ = []
+    cron_scheduler = types.ModuleType("cron.scheduler")
+    cron_scheduler.run_job = lambda job: events.append(("run", job["id"])) or "ok"
+
+    monkeypatch.setitem(sys.modules, "cron", cron_pkg)
+    monkeypatch.setitem(sys.modules, "cron.scheduler", cron_scheduler)
+    monkeypatch.setattr(p, "_DEFAULT_HERMES_HOME", default_home)
+    monkeypatch.setattr(p, "cron_profile_context_for_home", Ctx)
+
+    p.install_cron_scheduler_profile_isolation()
+
+    assert cron_scheduler.run_job({"id": "job1575", "profile": "research"}) == "ok"
+    assert events == [
+        ("enter", str(research_home)),
+        ("run", "job1575"),
+        ("exit", str(research_home)),
+    ]
+
+
+def test_scheduler_run_job_wrapper_does_not_reenter_manual_cron_context(tmp_path, monkeypatch):
+    """Manual /api/crons/run already pins run_job before calling it.
+
+    The scheduler safety wrapper must detect that existing context and delegate
+    directly, otherwise the non-reentrant env lock would deadlock or override the
+    manual execution profile.
+    """
+    import types
+
+    from api import profiles as p
+
+    events = []
+
+    class Ctx:
+        def __init__(self, home):
+            self.home = str(home)
+
+        def __enter__(self):
+            events.append(("unexpected-enter", self.home))
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append(("unexpected-exit", self.home))
+            return False
+
+    cron_pkg = types.ModuleType("cron")
+    cron_pkg.__path__ = []
+    cron_scheduler = types.ModuleType("cron.scheduler")
+    cron_scheduler.run_job = lambda job: events.append(("run", job["id"])) or "ok"
+
+    monkeypatch.setitem(sys.modules, "cron", cron_pkg)
+    monkeypatch.setitem(sys.modules, "cron.scheduler", cron_scheduler)
+    monkeypatch.setattr(p, "_DEFAULT_HERMES_HOME", tmp_path / "home")
+    monkeypatch.setattr(p, "cron_profile_context_for_home", Ctx)
+    monkeypatch.setattr(p._tls, "cron_profile_depth", 1, raising=False)
+
+    p.install_cron_scheduler_profile_isolation()
+
+    assert cron_scheduler.run_job({"id": "manual1575", "profile": "research"}) == "ok"
+    assert events == [("run", "manual1575")]
+
+
 def test_cron_worker_does_not_silently_fall_back_on_profile_context_failure():
     """_run_cron_tracked must NOT silently set ctx=None when
     cron_profile_context_for_home(...).__enter__() raises.

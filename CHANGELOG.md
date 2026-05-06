@@ -1,5 +1,34 @@
 # Hermes Web UI -- Changelog
 
+## [v0.51.10] — 2026-05-06 — 2-PR full-sweep batch
+
+### Fixed
+
+- **PR #1741** by @Michaelyklam — Isolate in-process cron scheduler profiles (closes #1575). The existing manual `/api/crons/run` flow already enters `cron_profile_context_for_home(...)` before calling `cron.scheduler.run_job()`, but a future in-process scheduler tick path (no request TLS) would call `run_job()` directly with whatever process-global profile happened to be active. New `install_cron_scheduler_profile_isolation()` in `api/profiles.py` (called once at WebUI profile-state init) wraps `cron.scheduler.run_job()` so it resolves the job's persisted `profile` to the matching `HERMES_HOME` and enters the same `cron_profile_context_for_home(...)` before execution. Thread-local cron-context depth tracking prevents re-entry when the manual path already pinned the profile (otherwise the non-reentrant `_cron_env_lock` would deadlock). Idempotent install via `_webui_profile_isolated` sentinel. Defensive: closes a future architectural gap; no behavior change to existing manual cron path. 4 new regression tests for the wrapper and the manual-run no-reentry guard.
+- **PR #1742** by @Michaelyklam — Allow profile switching during active streams (closes #1700). The previous `switch_profile()` blocked ALL profile switches whenever any stream was active, but the WebUI route uses cookie/thread-local switching (`process_wide=False`) which doesn't actually mutate `HERMES_HOME`, module-level path caches, process `.env`, or global config. Split the guard: process-wide global mutations remain blocked during active streams (still correct), per-client cookie switches now proceed unblocked. Frontend `static/panels.js` removes the `S.busy`-based early return and treats `active_stream_id`/`pending_user_message` as in-progress, so switching away creates a fresh session for the target profile rather than retagging the running one (matches the convention used in `static/boot.js`, `static/messages.js`, `static/commands.js`). 4 new regression tests + browser QA screenshot.
+
+### In-stage absorbed fix
+
+**Opus follow-up (absorbed in-release):**
+
+- **i18n cleanup — remove orphaned `profiles_busy_switch` keys.** PR #1742 removed the only consumer of this toast (the frontend `S.busy`-based early return). 9 locale entries were left orphaned. Opus stage-304 advisor flagged this as a low-priority SHOULD-FIX; absorbed per the absorb-default policy. Locale parity tests still pass (key removed from English first).
+
+### Tests
+
+4590 → **4596 passing** (+6 regression tests across the 2 PRs). 0 regressions. Full suite ~129s.
+
+### Pre-release verification
+
+- Stage-304: 2 PRs merged with sibling-rebase against stage HEAD on `api/profiles.py` (different regions: #1741 lines 248-345, #1742 around line 596 + #1741's offset). No conflicts.
+- All JS files syntax-clean (`node -c static/{panels,i18n}.js`).
+- All Python files syntax-clean.
+- pytest: 4596 passed, 0 failed (single clean run).
+- `scripts/run-browser-tests.sh`: all 11 endpoints PASS on isolated port 8789 with stage-304 binary.
+- Pre-stamp re-fetch: both PR heads still match local rebases — no late contributor commits.
+- Opus advisor: SHIP both, 5/5 verification questions clean, 0 MUST-FIX, 1 SHOULD-FIX absorbed (orphaned i18n keys).
+
+Closes #1575, #1700.
+
 ## [v0.51.9] — 2026-05-06 — 2-PR full-sweep batch
 
 ### Fixed
