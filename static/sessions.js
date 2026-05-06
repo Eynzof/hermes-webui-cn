@@ -392,6 +392,12 @@ async function loadSession(sid){
   S.session=data.session;
   S.session._modelResolutionDeferred=true;
   S.lastUsage={...(data.session.last_usage||{})};
+  // Reset scroll-direction tracker on session switch so the new chat's
+  // first scroll doesn't compare against the previous chat's scrollTop
+  // and false-trigger an unpin (#1731 follow-up — Opus stage-302 SHOULD-FIX).
+  if (typeof window !== 'undefined' && typeof window._resetScrollDirectionTracker === 'function') {
+    try { window._resetScrollDirectionTracker(); } catch (_) {}
+  }
   // Sync workspace display immediately so the chip label reflects the new session's workspace
   // before any async message-loading begins (mirrors how model is handled).
   if(typeof syncTopbar==='function') syncTopbar();

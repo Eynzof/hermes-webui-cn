@@ -1401,6 +1401,11 @@ let _scrollPinned=true;
 let _programmaticScroll=false;
 let _nearBottomCount=0;
 let _lastScrollTop=null;
+// Reset hook for session-switch — called from sessions.js loadSession() to
+// prevent the new chat's first scroll comparing against the previous chat's
+// scrollTop (Opus stage-302 SHOULD-FIX, #1731 follow-up).
+function _resetScrollDirectionTracker(){ _lastScrollTop=null; }
+if (typeof window !== 'undefined') window._resetScrollDirectionTracker = _resetScrollDirectionTracker;
 (function(){
   const el=document.getElementById('messages');
   if(!el) return;
