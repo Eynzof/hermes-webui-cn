@@ -563,6 +563,11 @@ async function populateModelDropdown(){
       _applyModelToDropdown(data.default_model, sel, data.active_provider||null);
     }
     if(typeof syncModelChip==='function') syncModelChip();
+    const dd=$('composerModelDropdown');
+    if(dd&&dd.classList.contains('open')&&typeof renderModelDropdown==='function'){
+      renderModelDropdown();
+      _positionModelDropdown();
+    }
     // Kick off a background live-model fetch for the active provider.
     // This runs after the static list is already shown (no blocking flicker).
     if(data.active_provider) _fetchLiveModels(data.active_provider, sel);
@@ -963,7 +968,7 @@ async function selectModelFromDropdown(value){
   if(typeof sel.onchange==='function') await sel.onchange();
 }
 
-function toggleModelDropdown(){
+async function toggleModelDropdown(){
   const dd=$('composerModelDropdown');
   const chip=$('composerModelChip');
   const sel=$('modelSelect');
@@ -974,6 +979,11 @@ function toggleModelDropdown(){
   if(typeof closeWsDropdown==='function') closeWsDropdown();
   if(typeof closeReasoningDropdown==='function') closeReasoningDropdown();
   if(typeof closeToolsetsDropdown==='function') closeToolsetsDropdown();
+  const ready=window._modelDropdownReady;
+  if(ready&&typeof ready.then==='function'){
+    try{await ready;}catch(_){}
+  }
+  if(dd.classList.contains('open')) return;
   renderModelDropdown();
   dd.classList.add('open');
   _positionModelDropdown();
