@@ -1,5 +1,11 @@
 # Hermes Web UI -- Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Named custom provider routing for local endpoints** — `model.provider: ollama-local` now normalizes to the same `custom:ollama-local` slug used by the model picker when a matching `custom_providers[].name` exists. Auto-discovered `/v1/models` results for that endpoint are folded into the named custom group, and stale base-url-derived slugs such as `custom:local-(127.0.0.1:11434)` no longer create a second picker group that routes to an unsettable API-key env var. Fixes #1806.
+
 ## [v0.51.18] — 2026-05-07 — 5-PR batch (4 contributor + 1 self-built UX polish)
 
 ### Fixed
