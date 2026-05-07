@@ -115,6 +115,41 @@ where \\(L_i(f)\\) = SPL at angle \\(i\\)."""
         assert "\\(" not in html and "\\)" not in html, html
 
 
+def test_user_code_block_with_latex_syntax_renders_as_literal_code():
+    """User-bubble code blocks containing \\[..\\] / \\(..\\) / $$..$$ must
+    render as literal code source, not as KaTeX. _renderUserFencedBlocks
+    must stash code fences BEFORE math (mirroring renderMd's ordering); if
+    math is stashed first, a user-typed code block containing LaTeX-like
+    syntax gets a `<div class="katex-block">` placeholder dropped INSIDE
+    `<pre><code>`, and the user's literal source is silently replaced by
+    rendered math.
+    """
+    sample = "```\n\\[ a + b \\] is wrong\n\\(L_i\\) too\n$$matrix$$\n```"
+    rendered = _run_renderers(sample)
+    user_html = rendered["user"]
+    # The whole code block should remain literal, no KaTeX wrappers inside.
+    assert "<pre><code>" in user_html, user_html
+    assert "katex-block" not in user_html, user_html
+    assert "katex-inline" not in user_html, user_html
+    # Backslashes survive HTML escape unchanged; the user's source is intact.
+    assert "\\[ a + b \\]" in user_html, user_html
+    assert "\\(L_i\\)" in user_html, user_html
+    assert "$$matrix$$" in user_html, user_html
+
+
+def test_user_bubble_top_level_latex_still_renders_after_fence_reorder():
+    """Sibling regression: top-level math (outside any code fence) must
+    still render through KaTeX in user bubbles after the fence-first
+    reorder. Guards against an over-correction that disables user-bubble
+    math rendering entirely.
+    """
+    sample = "math: \\[ x + y \\]\n\nand inline \\(L_i\\)"
+    rendered = _run_renderers(sample)
+    user_html = rendered["user"]
+    assert 'class="katex-block" data-katex="display"' in user_html, user_html
+    assert 'class="katex-inline" data-katex="inline"' in user_html, user_html
+
+
 def test_katex_inline_placeholder_emitted():
     """renderMd restore pass must emit .katex-inline spans for inline math."""
     assert 'katex-inline' in UI_JS, \

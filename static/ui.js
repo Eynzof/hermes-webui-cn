@@ -81,12 +81,10 @@ function _renderUserFencedBlocks(text){
     return `<span class="katex-inline" data-katex="inline">${esc(item.src)}</span>`;
   });
   let s=String(text||'');
-  // Stash math before escaping plain text; display delimiters must run before inline.
-  s=s.replace(/\$\$([\s\S]+?)\$\$/g,(_,m)=>stashMath('display',m));
-  s=s.replace(/\\\[([\s\S]+?)\\\]/g,(_,m)=>stashMath('display',m));
-  s=s.replace(/\$([^\s$\n][^$\n]*?[^\s$\n]|\S)\$/g,(_,m)=>stashMath('inline',m));
-  s=s.replace(/\\\((.+?)\\\)/g,(_,m)=>stashMath('inline',m));
-  // Extract fenced code blocks → stash, replace with null-token placeholder
+  // Extract fenced code blocks FIRST so math regexes never run inside fenced
+  // content. If math were stashed first, a user-typed code block containing
+  // \[..\] / \(..\) / $$..$$ would be rendered as a KaTeX block inside
+  // <pre><code> instead of as literal source. Mirrors renderMd()'s ordering.
   // CommonMark §4.5 line-anchored fence: the closing run must use at least
   // as many backticks as the opener, so inner triple-backtick fences remain content.
   s=s.replace(/(^|\n)[ ]{0,3}(`{3,})([^\n`]*)\n(?:([\s\S]*?)\n)?[ ]{0,3}\2`*[ \t]*(?=\n|$)/g,(_,lead,_fence,info,code)=>{
@@ -111,6 +109,12 @@ function _renderUserFencedBlocks(text){
     }
     return lead+'\x00UF'+(stash.length-1)+'\x00';
   });
+  // Now stash math from the OUTSIDE-of-fence text. Display delimiters must
+  // run before inline so $$..$$ isn't mis-parsed as $..$..$..$.
+  s=s.replace(/\$\$([\s\S]+?)\$\$/g,(_,m)=>stashMath('display',m));
+  s=s.replace(/\\\[([\s\S]+?)\\\]/g,(_,m)=>stashMath('display',m));
+  s=s.replace(/\$([^\s$\n][^$\n]*?[^\s$\n]|\S)\$/g,(_,m)=>stashMath('inline',m));
+  s=s.replace(/\\\((.+?)\\\)/g,(_,m)=>stashMath('inline',m));
   // Escape remaining plain text and convert newlines to <br>
   s=esc(s).replace(/\n/g,'<br>');
   // Restore stashed code blocks, then math placeholders as KaTeX targets.
