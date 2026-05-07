@@ -33,6 +33,9 @@ class QuietHTTPServer(ThreadingHTTPServer):
     request_queue_size = 64
 
     def __init__(self, *args, **kwargs):
+        server_address = args[0] if args else kwargs.get('server_address', None)
+        if server_address and ':' in server_address[0]:
+            self.address_family = socket.AF_INET6
         super().__init__(*args, **kwargs)
         self.accept_loop_requests_total = 0
         self.accept_loop_last_request_at = 0.0
@@ -244,7 +247,7 @@ def main() -> None:
         print(f'     Set a password via Settings or HERMES_WEBUI_PASSWORD env var.', flush=True)
         print(f'     To suppress: bind to 127.0.0.1 or set a password.', flush=True)
         if within_container:
-            print(f'     Note: You are running within a container, must bind to 0.0.0.0 to publish the port.', flush=True)
+            print(f'     Note: You are running within a container, must bind to 0.0.0.0 (IPv4) or :: (IPv6) to publish the port.', flush=True)
     elif not is_auth_enabled():
         print(f'  [tip] No password set. Any process on this machine can read sessions', flush=True)
         print(f'        and memory via the local API. Set HERMES_WEBUI_PASSWORD to', flush=True)
@@ -295,7 +298,7 @@ def main() -> None:
             scheme = 'http'
 
     print(f'  Hermes Web UI listening on {scheme}://{HOST}:{PORT}', flush=True)
-    if HOST == '127.0.0.1' or within_container:
+    if HOST in ('127.0.0.1', '::1') or within_container:
         print(f'  Remote access: ssh -N -L {PORT}:127.0.0.1:{PORT} <user>@<your-server>', flush=True)
     print(f'  Then open:     {scheme}://localhost:{PORT}', flush=True)
     print('', flush=True)
