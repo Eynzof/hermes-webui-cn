@@ -675,6 +675,7 @@ def _clear_stale_stream_state(session) -> bool:
     with _get_session_agent_lock(session.session_id):
         if getattr(session, "active_stream_id", None) != stream_id:
             return False
+        _materialize_pending_user_turn_before_error(session)
         session.active_stream_id = None
         if hasattr(session, "pending_user_message"):
             session.pending_user_message = None
@@ -1508,7 +1509,12 @@ from api.workspace import (
     _workspace_blocked_roots,
 )
 from api.upload import handle_upload, handle_upload_extract, handle_transcribe
-from api.streaming import _sse, _run_agent_streaming, cancel_stream
+from api.streaming import (
+    _sse,
+    _run_agent_streaming,
+    cancel_stream,
+    _materialize_pending_user_turn_before_error,
+)
 from api.providers import get_providers, get_provider_quota, set_provider_key, remove_provider_key
 from api.onboarding import (
     apply_onboarding_setup,
