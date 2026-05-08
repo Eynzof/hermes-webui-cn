@@ -3683,6 +3683,7 @@ _SETTINGS_DEFAULTS = {
     "skin": "default",  # accent color skin: default | ares | mono | slate | poseidon | sisyphus | charizard
     "font_size": "default",  # small | default | large
     "session_jump_buttons": False,  # show Start/End transcript jump pills
+    "session_endless_scroll": False,  # auto-load older transcript pages while scrolling upward
     "language": "en",  # UI locale code; must match a key in static/i18n.js LOCALES
     "bot_name": os.getenv(
         "HERMES_WEBUI_BOT_NAME", "Hermes"
@@ -3812,6 +3813,7 @@ _SETTINGS_BOOL_KEYS = {
     "simplified_tool_calling",
     "api_redact_enabled",
     "session_jump_buttons",
+    "session_endless_scroll",
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
 _SETTINGS_LANG_RE = __import__("re").compile(r"^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$")

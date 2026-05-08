@@ -434,6 +434,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: 'When enabled, the workspace / file browser panel opens automatically with each new session. You can still close it manually at any time.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: 'Load older messages while scrolling up',
+
+    settings_desc_session_endless_scroll: 'When enabled, older messages load automatically as you scroll upward. When disabled, use the older-messages button.',
     open_in_browser: 'Open in browser',
     settings_dropdown_conversation: 'Conversation',
     settings_dropdown_appearance: 'Appearance',
@@ -1468,6 +1472,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: '有効にすると、新しいセッションごとにワークスペース/ファイルブラウザパネルが自動で開きます。手動でいつでも閉じられます。',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: '上スクロールで古いメッセージを読み込む',
+
+    settings_desc_session_endless_scroll: '有効にすると、上にスクロールしたとき古いメッセージを自動で読み込みます。無効の場合は古いメッセージボタンを使います。',
     open_in_browser: 'ブラウザで開く',
     settings_dropdown_conversation: '会話',
     settings_dropdown_appearance: '外観',
@@ -2919,6 +2927,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: 'При включении панель файлов будет открываться автоматически в каждой новой сессии.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: 'Загружать старые сообщения при прокрутке вверх',
+
+    settings_desc_session_endless_scroll: 'Если включено, старые сообщения загружаются автоматически при прокрутке вверх. Если выключено, используйте кнопку загрузки старых сообщений.',
     open_in_browser: 'Открыть в браузере',
     settings_section_system_title: 'System',
     settings_tab_appearance: 'Appearance',
@@ -3875,6 +3887,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: 'Al activar, el panel de archivos se abre automáticamente en cada nueva sesión. Aún puedes cerrarlo manualmente.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: 'Cargar mensajes antiguos al desplazarse hacia arriba',
+
+    settings_desc_session_endless_scroll: 'Si está activado, los mensajes antiguos se cargan automáticamente al desplazarte hacia arriba. Si está desactivado, usa el botón de mensajes antiguos.',
     open_in_browser: 'Abrir en el navegador',
     settings_section_system_title: 'System',
     settings_tab_appearance: 'Appearance',
@@ -4576,6 +4592,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: 'Wenn aktiviert, wird der Datei-Browser bei jeder neuen Sitzung automatisch geöffnet. Er kann jederzeit manuell geschlossen werden.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: 'Ältere Nachrichten beim Hochscrollen laden',
+
+    settings_desc_session_endless_scroll: 'Wenn aktiviert, werden ältere Nachrichten beim Hochscrollen automatisch geladen. Wenn deaktiviert, nutzt du den Button für ältere Nachrichten.',
 
     workspace_drag_hint: 'Ziehen zum Neuordnen',
     workspace_reorder_failed: 'Neuordnen fehlgeschlagen',
@@ -5808,6 +5828,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: '启用后，工作区/文件浏览器面板会在每次新会话时自动打开。您仍可随时手动关闭。',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: '向上滚动时加载更早的消息',
+
+    settings_desc_session_endless_scroll: '启用后，向上滚动时会自动加载更早的消息。禁用时请使用加载更早消息按钮。',
     open_in_browser: '在浏览器中打开',
     settings_section_system_title: 'System',
     settings_tab_appearance: 'Appearance',
@@ -6220,6 +6244,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: '啟用後，工作區/檔案瀏覽器面板會在每次新會話時自動開啓。您仍可隨時手動關閉。',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: '向上捲動時載入較早訊息',
+
+    settings_desc_session_endless_scroll: '啟用後，向上捲動時會自動載入較早訊息。停用時請使用載入較早訊息按鈕。',
     open_in_browser: '在瀏覽器中開啓',
     settings_dropdown_conversation: '對話',
     settings_dropdown_appearance: '外觀',
@@ -7271,6 +7299,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: 'Quando ativo, o painel workspace abre automaticamente com cada nova sessão.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: 'Carregar mensagens antigas ao rolar para cima',
+
+    settings_desc_session_endless_scroll: 'Quando ativado, mensagens antigas carregam automaticamente ao rolar para cima. Quando desativado, use o botão de mensagens antigas.',
     open_in_browser: 'Abrir no navegador',
     settings_dropdown_conversation: 'Conversa',
     settings_dropdown_appearance: 'Aparência',
@@ -8203,6 +8235,10 @@ const LOCALES = {
     settings_desc_workspace_panel_open: '활성화하면 새 세션마다 워크스페이스/파일 브라우저 패널이 자동으로 열립니다. 언제든지 수동으로 닫을 수 있습니다.',
     settings_label_session_jump_buttons: 'Show session jump buttons',
     settings_desc_session_jump_buttons: 'Show floating Start and End buttons while reading long session histories.',
+
+    settings_label_session_endless_scroll: '위로 스크롤할 때 이전 메시지 불러오기',
+
+    settings_desc_session_endless_scroll: '활성화하면 위로 스크롤할 때 이전 메시지를 자동으로 불러옵니다. 비활성화하면 이전 메시지 버튼을 사용합니다.',
     open_in_browser: '브라우저에서 열기',
     settings_dropdown_conversation: '대화',
     settings_dropdown_appearance: '외형',

@@ -284,6 +284,9 @@ function _messageRenderableMessageCount(){
 function _messageHiddenBeforeCount(){
   return Math.max(0,_messageRenderableMessageCount()-_currentMessageRenderWindowSize());
 }
+function _isSessionEndlessScrollEnabled(){
+  return window._sessionEndlessScrollEnabled===true;
+}
 function _wireMessageWindowLoadEarlierButton(){
   const indicator=$('loadOlderIndicator');
   if(!indicator) return;
@@ -1716,8 +1719,11 @@ if (typeof window !== 'undefined') window._resetScrollDirectionTracker = _resetS
       const btn=$('scrollToBottomBtn');
       if(btn) btn.style.display=_scrollPinned?'none':'flex';
       if(typeof _updateSessionStartJumpButton==='function') _updateSessionStartJumpButton();
-      // Load older messages when scrolled near the top
-      if(el.scrollTop<80 && typeof _messagesTruncated!=='undefined' && _messagesTruncated && typeof _loadOlderMessages==='function'){
+      // Prefetch older messages before the reader hits the hard top. Prepending
+      // then preserving scrollTop is seamless only if there is runway left for
+      // the user's continued upward wheel/touch movement.
+      const olderPrefetchPx=Math.max(600,el.clientHeight*1.5);
+      if(_isSessionEndlessScrollEnabled()&&el.scrollTop<olderPrefetchPx && typeof _messagesTruncated!=='undefined' && _messagesTruncated && typeof _loadOlderMessages==='function'){
         _loadOlderMessages();
       }
     });

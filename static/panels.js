@@ -4252,6 +4252,7 @@ function _appearancePayloadFromUi(){
     skin: ($('settingsSkin')||{}).value || localStorage.getItem('hermes-skin') || 'default',
     font_size: ($('settingsFontSize')||{}).value || localStorage.getItem('hermes-font-size') || 'default',
     session_jump_buttons: !!($('settingsSessionJumpButtons')||{}).checked,
+    session_endless_scroll: !!($('settingsSessionEndlessScroll')||{}).checked,
   };
 }
 
@@ -4303,6 +4304,7 @@ async function _autosaveAppearanceSettings(payload){
       window._sessionJumpButtonsEnabled=!!saved.session_jump_buttons;
       if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
     }
+    window._sessionEndlessScrollEnabled=!!(saved&&saved.session_endless_scroll);
     _setAppearanceAutosaveStatus('saved');
   }catch(e){
     console.warn('[settings] appearance autosave failed', e);
@@ -4484,6 +4486,15 @@ async function loadSettingsPanel(){
         document.documentElement.dataset.workspacePanel=open?'open':'closed';
         if(open&&_workspacePanelMode==='closed') openWorkspacePanel('browse');
         else if(!open&&_workspacePanelMode!=='closed') toggleWorkspacePanel(false);
+      };
+    }
+    const endlessScrollCb=$('settingsSessionEndlessScroll');
+    if(endlessScrollCb){
+      endlessScrollCb.checked=!!settings.session_endless_scroll;
+      window._sessionEndlessScrollEnabled=endlessScrollCb.checked;
+      endlessScrollCb.onchange=function(){
+        window._sessionEndlessScrollEnabled=this.checked;
+        _scheduleAppearanceAutosave();
       };
     }
     const resolvedLanguage=(typeof resolvePreferredLocale==='function')
@@ -5144,6 +5155,7 @@ function _applySavedSettingsUi(saved, body, opts){
   if(typeof _applySessionNavigationPrefs==='function') _applySessionNavigationPrefs();
   window._sidebarDensity=sidebarDensity==='detailed'?'detailed':'compact';
   window._busyInputMode=body.busy_input_mode||'queue';
+  window._sessionEndlessScrollEnabled=!!body.session_endless_scroll;
   window._botName=body.bot_name||'Hermes';
   if(typeof applyBotName==='function') applyBotName();
   if(typeof setLocale==='function') setLocale(language);
@@ -5240,6 +5252,7 @@ async function saveSettings(andClose){
   body.skin=skin;
   body.font_size=fontSize;
   body.session_jump_buttons=!!($('settingsSessionJumpButtons')||{}).checked;
+  body.session_endless_scroll=!!($('settingsSessionEndlessScroll')||{}).checked;
   body.language=language;
   body.show_token_usage=showTokenUsage;
   body.show_tps=showTps;
