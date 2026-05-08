@@ -2446,6 +2446,13 @@ def _run_agent_streaming(
                     _fallback_resolved or {},
                     sorted(_toolsets) if _toolsets else [],
                     _reasoning_config or {},
+                    # #1897: profile_home is part of the agent's identity because
+                    # AIAgent caches `_cached_system_prompt` from `load_soul_md()`
+                    # at construction time, sourced from HERMES_HOME. Same-session
+                    # profile switches keep `session_id` stable, so without this
+                    # field the cached agent silently retains the previous
+                    # profile's SOUL.md (and any other profile-scoped context).
+                    _profile_home or '',
                 ], sort_keys=True)
                 _agent_sig = _hashlib.sha256(_sig_blob.encode()).hexdigest()[:16]
 
@@ -3013,15 +3020,62 @@ def _run_agent_streaming(
                 # the indicator can still show a meaningful percentage.
                 # Sourced from PR #1344 (@jasonjcwu) — extracted to a focused
                 # follow-up after PR #1344 was closed as superseded by #1341.
+                #
+                # #1896: pass config_context_length, provider, and
+                # custom_providers so explicit config overrides win over the
+                # 256K default fallback. Without these, users on 1M-context
+                # models who set `model.context_length: 1048576` (or rely on
+                # a `custom_providers` per-model override) get a 256K
+                # window in the persisted session and the SSE payload —
+                # which then trips LCM auto-compress at ~25% of the wrong
+                # value, cascading into 429 floods.
                 if not getattr(s, 'context_length', 0):
                     try:
                         from agent.model_metadata import get_model_context_length
+                        _cfg_ctx_len = None
+                        _cfg_custom_providers = None
+                        try:
+                            _model_cfg_for_ctx = _cfg.get('model', {}) if isinstance(_cfg, dict) else {}
+                            if isinstance(_model_cfg_for_ctx, dict):
+                                _raw_cfg_ctx = _model_cfg_for_ctx.get('context_length')
+                                if _raw_cfg_ctx is not None:
+                                    try:
+                                        _parsed_cfg_ctx = int(_raw_cfg_ctx)
+                                        if _parsed_cfg_ctx > 0:
+                                            _cfg_ctx_len = _parsed_cfg_ctx
+                                    except (TypeError, ValueError):
+                                        # Invalid config — let the resolver fall
+                                        # through to provider/registry probing.
+                                        pass
+                            _raw_cp = _cfg.get('custom_providers') if isinstance(_cfg, dict) else None
+                            if isinstance(_raw_cp, list):
+                                _cfg_custom_providers = _raw_cp
+                        except Exception:
+                            pass
                         _resolved_cl = get_model_context_length(
                             getattr(agent, 'model', resolved_model or '') or '',
                             getattr(agent, 'base_url', '') or '',
+                            config_context_length=_cfg_ctx_len,
+                            provider=resolved_provider or '',
+                            custom_providers=_cfg_custom_providers,
                         )
                         if _resolved_cl:
                             s.context_length = _resolved_cl
+                    except TypeError:
+                        # Older hermes-agent builds whose get_model_context_length
+                        # signature pre-dates the config_context_length /
+                        # custom_providers kwargs. Retry with the legacy 2-arg
+                        # form so the indicator still resolves *something*.
+                        try:
+                            from agent.model_metadata import get_model_context_length as _legacy_cl
+                            _resolved_cl = _legacy_cl(
+                                getattr(agent, 'model', resolved_model or '') or '',
+                                getattr(agent, 'base_url', '') or '',
+                            )
+                            if _resolved_cl:
+                                s.context_length = _resolved_cl
+                        except Exception:
+                            pass
                     except Exception:
                         # Older hermes-agent builds may not expose this helper.
                         # Better to leave context_length=0 than crash the save.
@@ -3065,13 +3119,47 @@ def _run_agent_streaming(
             # resolve the model's context window from metadata so the UI indicator
             # shows the correct percentage rather than overflowing against the 128K
             # JS default.  Mirrors the session-save fallback above (lines ~2205-2217).
+            #
+            # #1896: pass config_context_length, provider, and custom_providers so
+            # explicit config overrides win over the 256K default fallback. The
+            # SSE payload's `context_length` is what feeds the live token-usage
+            # indicator, so a stale 256K here surfaces as the same wrong-window
+            # display that motivates this fix.
             if not usage.get('context_length'):
                 try:
                     from agent.model_metadata import get_model_context_length as _get_cl
-                    _fb_cl = _get_cl(
-                        getattr(agent, 'model', resolved_model or '') or '',
-                        getattr(agent, 'base_url', '') or '',
-                    )
+                    _cfg_ctx_len = None
+                    _cfg_custom_providers = None
+                    try:
+                        _model_cfg_for_ctx = _cfg.get('model', {}) if isinstance(_cfg, dict) else {}
+                        if isinstance(_model_cfg_for_ctx, dict):
+                            _raw_cfg_ctx = _model_cfg_for_ctx.get('context_length')
+                            if _raw_cfg_ctx is not None:
+                                try:
+                                    _parsed_cfg_ctx = int(_raw_cfg_ctx)
+                                    if _parsed_cfg_ctx > 0:
+                                        _cfg_ctx_len = _parsed_cfg_ctx
+                                except (TypeError, ValueError):
+                                    pass
+                        _raw_cp = _cfg.get('custom_providers') if isinstance(_cfg, dict) else None
+                        if isinstance(_raw_cp, list):
+                            _cfg_custom_providers = _raw_cp
+                    except Exception:
+                        pass
+                    try:
+                        _fb_cl = _get_cl(
+                            getattr(agent, 'model', resolved_model or '') or '',
+                            getattr(agent, 'base_url', '') or '',
+                            config_context_length=_cfg_ctx_len,
+                            provider=resolved_provider or '',
+                            custom_providers=_cfg_custom_providers,
+                        )
+                    except TypeError:
+                        # Older hermes-agent builds: fall back to legacy 2-arg form.
+                        _fb_cl = _get_cl(
+                            getattr(agent, 'model', resolved_model or '') or '',
+                            getattr(agent, 'base_url', '') or '',
+                        )
                     if _fb_cl:
                         usage['context_length'] = _fb_cl
                 except Exception:
