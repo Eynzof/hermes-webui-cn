@@ -6639,7 +6639,10 @@ def _handle_chat_sync(handler, body):
         from run_agent import AIAgent
 
         with CHAT_LOCK:
-            from api.config import resolve_model_provider
+            from api.config import (
+                resolve_model_provider,
+                resolve_custom_provider_connection,
+            )
 
             _model, _provider, _base_url = resolve_model_provider(
                 model_with_provider_context(s.model, getattr(s, "model_provider", None))
@@ -6665,6 +6668,12 @@ def _handle_chat_sync(handler, body):
                     f"[webui] WARNING: resolve_runtime_provider failed: {_e}",
                     flush=True,
                 )
+            if isinstance(_provider, str) and _provider.startswith("custom:"):
+                _cp_key, _cp_base = resolve_custom_provider_connection(_provider)
+                if not _api_key and _cp_key:
+                    _api_key = _cp_key
+                if not _base_url and _cp_base:
+                    _base_url = _cp_base
             agent = AIAgent(
                 model=_model,
                 provider=_provider,
@@ -6677,23 +6686,24 @@ def _handle_chat_sync(handler, body):
                 enabled_toolsets=_resolve_cli_toolsets(),
                 session_id=s.session_id,
             )
-            workspace_ctx = f"[Workspace: {s.workspace}]\n"
-            workspace_system_msg = (
-                f"Active workspace at session start: {s.workspace}\n"
-                "Every user message is prefixed with [Workspace: /absolute/path] indicating the "
-                "workspace the user has selected in the web UI at the time they sent that message. "
-                "This tag is the single authoritative source of the active workspace and updates "
-                "with every message. It overrides any prior workspace mentioned in this system "
-                "prompt, memory, or conversation history. Always use the value from the most recent "
-                "[Workspace: ...] tag as your default working directory for ALL file operations: "
-                "write_file, read_file, search_files, terminal workdir, and patch. "
-                "Never fall back to a hardcoded path when this tag is present."
-            )
             from api.streaming import (
                 _merge_display_messages_after_agent_result,
                 _restore_reasoning_metadata,
                 _sanitize_messages_for_api,
                 _session_context_messages,
+                _workspace_context_prefix,
+            )
+            workspace_ctx = _workspace_context_prefix(str(s.workspace))
+            workspace_system_msg = (
+                f"Active workspace at session start: {s.workspace}\n"
+                "Every user message is prefixed with [Workspace::v1: /absolute/path] indicating the "
+                "workspace the user has selected in the web UI at the time they sent that message. "
+                "This tag is the single authoritative source of the active workspace and updates "
+                "with every message. It overrides any prior workspace mentioned in this system "
+                "prompt, memory, or conversation history. Always use the value from the most recent "
+                "[Workspace::v1: ...] tag as your default working directory for ALL file operations: "
+                "write_file, read_file, search_files, terminal workdir, and patch. "
+                "Never fall back to a hardcoded path when this tag is present."
             )
 
             _previous_messages = list(s.messages or [])
@@ -7427,6 +7437,13 @@ def _handle_session_compress(handler, body):
         except Exception as _e:
             logger.warning("resolve_runtime_provider failed for compression: %s", _e)
 
+        if isinstance(resolved_provider, str) and resolved_provider.startswith("custom:"):
+            _cp_key, _cp_base = _cfg.resolve_custom_provider_connection(resolved_provider)
+            if not resolved_api_key and _cp_key:
+                resolved_api_key = _cp_key
+            if not resolved_base_url and _cp_base:
+                resolved_base_url = _cp_base
+
         if not resolved_api_key:
             return bad(handler, "No provider configured -- cannot compress.")
 
@@ -8040,6 +8057,13 @@ def _handle_handoff_summary(handler, body):
                 resolved_base_url = _rt.get("base_url")
         except Exception as _e:
             logger.warning("resolve_runtime_provider failed for handoff summary: %s", _e)
+
+        if isinstance(resolved_provider, str) and resolved_provider.startswith("custom:"):
+            _cp_key, _cp_base = _cfg.resolve_custom_provider_connection(resolved_provider)
+            if not resolved_api_key and _cp_key:
+                resolved_api_key = _cp_key
+            if not resolved_base_url and _cp_base:
+                resolved_base_url = _cp_base
 
         if not resolved_api_key:
             summary_text = _fallback_handoff_summary(msgs)

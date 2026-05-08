@@ -1,5 +1,43 @@
 # Hermes Web UI -- Changelog
 
+## [v0.51.27] — 2026-05-08 — 4-PR contributor batch (Release E1: workspace-prefix sentinel hardening, custom named provider API key resolution, streaming chat scroll-pin retention, Kanban detail scrollable)
+
+### Fixed (4 PRs)
+
+- **PR #1916** by @Michaelyklam — Make Kanban detail view scrollable. The app shell sets `body { overflow: hidden }`, so the Kanban main view must own vertical scrolling. Pre-fix, a selected task with a long body could push the board below the viewport with no way to reach it. Fix: add `overflow-y: auto` to `main.main.showing-kanban > #mainKanban` (one CSS property + regression test). Closes #1915.
+
+- **PR #1914** by @ai-ag2026 — Keep streaming chat pinned after final render. During streaming, bottom-pinned scroll worked, but after the `done` event late Markdown layout growth could unpin the viewport — the user would see the last token, then suddenly the chat would scroll up by hundreds of pixels as render reflowed. Fix: add explicit upward-intent gating (`MESSAGE_UPWARD_INTENT_MS=450` ms window for wheel/touch events) so passive `scrollTop` decreases from windowing/reflow no longer count as user upward intent. Pre-replacement `shouldFollowOnDone` capture in `static/messages.js` calls `scrollToBottom()` if pin or near-bottom (`<=1200px`) was true before render. `scrollIfPinned` and `scrollToBottom` now write `_lastScrollTop` and clear the programmatic flag in a rAF so the next listener pass doesn't see a synthetic upward delta.
+
+- **PR #1918** by @franksong2702 — Fix workspace prefix sentinel handling (closes #1913 follow-up filed in v0.51.25). The pre-fix strip regex `^\s*\[Workspace:[^\]]+\]\s*` was too permissive — a user prompt starting with `[Workspace: /path/to/explain]` would be silently eaten, and workspace paths containing `]` would truncate at the first `]`. Fix introduces a versioned sentinel format `[Workspace::v1: ...]` (double-colon distinguishes from natural English) AND escapes `]` in the path with `\]`. New helpers: `_workspace_context_prefix(path)`, `_escape_workspace_prefix_path(path)`, and `_strip_workspace_prefix(text, *, include_legacy=False)` with optional legacy fallback for transcript-compaction identity matching during the migration window. Closes #1913.
+
+  **Mid-stage absorbed fixes (per Opus advisor on stage-322):**
+  1. **#1918 missed second injection site at `api/routes.py:6689`** (`_handle_chat_sync`, the `POST /api/chat` synchronous handler). Without this fix, the sync chat path would still inject legacy `[Workspace: ...]` while the streaming path injected `[Workspace::v1: ...]` — producing user bubbles that visibly leak the prefix on the sync surface, and a system-prompt format string that no longer matches reality. Maintainer routed the sync injection through `_workspace_context_prefix(...)` and updated the surrounding system-prompt text to v1 form, mirroring the streaming.py block.
+  2. **#1918 backwards-compat gap in `static/ui.js:_stripWorkspaceDisplayPrefix`** — existing on-disk transcripts saved before the v1 migration still carry the legacy format. Without a JS legacy fallback, pre-upgrade sessions would render the literal `[Workspace: /tmp/proj]` prefix in user bubbles after upgrade. Maintainer added a legacy-regex fallback paralleling the Python `include_legacy=True` branch on the streaming side; updated the regression test that previously asserted the legacy regex was absent.
+
+- **PR #1814** by @hualong1009 — Custom named provider API key resolution. Adds new top-level helper `resolve_custom_provider_connection(provider_id) -> (api_key, base_url)` that resolves `custom:*` provider IDs to credentials from `config.yaml > custom_providers[]`. Supports `api_key` as literal value, `${ENV_VAR}` interpolation, or `key_env` env-var hint. Uses `get_config()` snapshot (per-profile aware). Fallback to single-entry `custom_providers` when slug doesn't match exactly. Also adds fallback in `api/streaming.py` self-heal paths so an agent rebuild after a transient failure can re-fetch credentials. **Deferral re-evaluated (per prior sweep notes):** the prior `maintainer-review` flag noted feared overlap with #1818, but #1818 already shipped (v0.51.19) with its slug-matching helpers. Re-checking against current master post-#1818: the new `resolve_custom_provider_connection()` is purely additive (no helper duplication). **Style observation (non-blocking)**: PR's local `_slugify` has slightly different normalization (`_` → `-`, collapse `--`, strip leading/trailing `-`) than master's canonical `_custom_provider_slug_from_name`. Internally self-consistent (both pid and entry name go through the same local slugify before comparison) so it works for matching, but a follow-up could unify the slug semantics. The 6-call-site fallback pattern (3 in `api/routes.py`, 3 in `api/streaming.py`) is also a candidate for a single `apply_custom_provider_fallback()` helper.
+
+### Tests
+
+4890 → **4898 collected, 4884 passing, 0 regressions** (+8 net new). Full suite ~145s on Python 3.11 (HERMES_HOME isolated). JS syntax check (`node -c`) passes on `static/messages.js` and `static/ui.js`. Browser API sanity harness (port 8789) all-green: 11 endpoints + 20 QA tests verified. Opus advisor pass: 2 BLOCKERS identified and fixed in-stage (per absorb-in-release default), then SHIP.
+
+### Pre-release verification
+
+- Full pytest under `HERMES_HOME` isolation: **4884 passed, 11 skipped, 1 xfailed, 2 xpassed, 8 subtests passed** in 145.18s.
+- Browser API harness against stage-322 on port 8789: all 11 endpoints + 20 QA tests PASS.
+- `node -c` on `static/messages.js`, `static/ui.js`: clean.
+- Stage diff: 13 files, +348/-22 (pre-Opus-fix); 14 files, +382/-31 (post-Opus-fix incorporating the routes.py legacy-injection fix and ui.js legacy-fallback fix).
+- Opus advisor pass on stage-322 brief: identified 2 BLOCKERS in PR #1918 (missed `routes.py` injection site + missing JS legacy fallback). Both absorbed in-stage per absorb-in-release default. Test that asserted "legacy regex absent" updated to assert legacy regex IS present (mirrors Python `include_legacy=True` branch).
+- v0.51.26 fixes verified preserved across rebase: `_strip_workspace_prefix` (10), `on_interim_assistant` (2), `_max_iterations_cfg` (9), `if input_tokens > 0:` (1), `get_default_hermes_root` (3), `_sessionSegmentCount` (9), `_active_skills_dir` (6).
+- Pre-stamp re-fetch of all 4 PR heads: no contributor force-pushes during the Opus window.
+
+### Opus-applied fixes (absorbed in-release)
+
+**From stage-322 absorption:**
+
+1. **#1918 second injection site** — `api/routes.py:_handle_chat_sync` was injecting legacy `[Workspace: ...]` and telling the agent that's the active format. Fixed: routed through `_workspace_context_prefix(str(s.workspace))`; updated surrounding system-prompt strings to reference `[Workspace::v1: ...]` consistently.
+
+2. **#1918 JS legacy fallback** — `static/ui.js:_stripWorkspaceDisplayPrefix` was changed to v1-only regex with no legacy fallback. Fixed: added fallthrough to legacy regex when v1 strip doesn't match, mirroring the Python `include_legacy=True` branch. Updated test `test_workspace_display_prefix_helper_strips_leading_metadata_only` to assert the legacy regex IS present (was inverted to assert it was absent).
+
 ## [v0.51.26] — 2026-05-08 — 5-PR follow-on contributor batch (Release D: profile-isolation hardening across cache + skills + gateway-health, context-length config-override threading, sidebar segment count UI polish)
 
 ### Fixed (5 PRs + 1 absorbed test)
