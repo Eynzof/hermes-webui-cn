@@ -2,7 +2,7 @@
 
 > Web companion to the Hermes Agent CLI. Same workflows, browser-native.
 >
-> Last updated: v0.51.27 (May 8, 2026) — 4898 tests collected — 4-PR Release E1 batch (workspace-prefix sentinel hardening, custom named provider API key resolution, streaming chat scroll-pin, Kanban detail scrollable)
+> Last updated: v0.51.28 (May 8, 2026) — 4947 tests collected — 2-PR Release E2 batch (MCP server Option A rewrite + WebUI /goal command)
 > Test source: `pytest tests/ --collect-only -q`
 > Per-version detail: see [CHANGELOG.md](./CHANGELOG.md)
 

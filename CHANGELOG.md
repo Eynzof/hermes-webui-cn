@@ -1,6 +1,38 @@
 # Hermes Web UI -- Changelog
 
-## [v0.51.27] — 2026-05-08 — 4-PR contributor batch (Release E1: workspace-prefix sentinel hardening, custom named provider API key resolution, streaming chat scroll-pin retention, Kanban detail scrollable)
+## [v0.51.28] — 2026-05-08 — 2-PR contributor batch (Release E2: MCP server Option A rewrite + WebUI /goal command)
+
+### Added (2 PRs)
+
+- **PR #1895** by @samuelgudi — MCP server Option A rewrite (#1616). Replaces the fragile MCP integration with a clean `mcp_server.py` (567 LOC) implementing project CRUD, session listing, and session mutations (rename/move) over Hermes's HTTP API. Imports `api.models` / `api.profiles` canonically rather than carrying duplicate slug-matching helpers. Relocates `_profiles_match` from `api/routes.py` into `api/profiles.py` as the single source of truth (mcp_server.py and api/routes.py both now import the canonical helper — re-introducing a local copy in either module trips a parity test immediately). Adds env-aware WEBUI_URL (`HERMES_WEBUI_HOST` / `HERMES_WEBUI_PORT`). New behaviour: `delete_project` REFUSES to touch session JSONs when `HERMES_WEBUI_PASSWORD` is unset, returning `{ok:true, unassigned_sessions:0, warning:"…"}` instead — preventing data-loss when an MCP client tries to delete a project on an unauthenticated server. 53-test coverage in `tests/test_mcp_server.py` (914 LOC) including HTTP wire-format integration tests, profile-scoped isolation, legacy untagged row visibility, and `--profile foo` CLI ordering regression. Closes #1616.
+
+- **PR #1866** by @Michaelyklam — WebUI `/goal` command for goal-tracking with budget enforcement and continuation prompts. New `api/goals.py` (489 LOC) implements goal lifecycle (set / pause / resume / clear / status), per-profile SQLite `SessionDB` cache, and `evaluate_goal_after_turn()` SSE hook that emits `goal` and `goal_continue` events from `api/streaming.py` after assistant turns. Wire-up: `api/routes.py` adds `/api/goal` endpoint (POST set/pause/resume/clear, GET status) and `_start_chat_stream_for_session()` extraction so kickoff prompts can run through the canonical streaming path; `static/commands.js` adds `/goal` autocomplete (cmdGoal handler) with i18n description; `static/messages.js` handles new SSE event types with continuation-toast UI; `static/i18n.js` adds 9 new strings across all locales. 4 documentation screenshots added under `docs/pr-media/{1866,1808}/`. Closes #1808.
+
+### Mid-stage absorbed fixes (test isolation, per blocker investigation)
+
+- **#1857 polluter root-cause** — `tests/test_issue1857_usage_overwrite.py` was using `mock.patch.dict(sys.modules, {...})`, which DELETES any keys added during the patched scope on `__exit__`. That silently evicted lazily-imported pydantic submodules (e.g. `pydantic.root_model`), producing `KeyError: 'pydantic.root_model'` in `test_mcp_server.py` downstream when the full pytest suite ran. Fixed by replacing with manual save/restore using a `_MISSING` sentinel.
+- **#1895 module-attribute restoration** — `tests/test_mcp_server.py` mutates module-level constants on `api.config`/`api.models`/`mcp_server` (`STATE_DIR`, `SESSION_DIR`, `PROJECTS_FILE`, …) so the MCP server reads from a tmpdir. Without restoration, downstream tests (`test_pytest_state_isolation`, `test_provider_quota_status`, `test_provider_management`) read deleted tmpdirs from `api.config.STATE_DIR`. Fixed by snapshotting originals on first `_reimport_mcp()` call and restoring in `_cleanup_state_dir()`.
+- **#1895 `_profiles_match` parity test parent-attribute leak** — `test_profiles_match_single_source_of_truth` pops `api.routes`/`api.profiles` from `sys.modules` and re-imports for the canonical-helper identity check. When restoring `sys.modules` only, fresh modules still leaked through because `import api.routes as r` resolves via `sys.modules['api'].routes` (parent-package attribute), NOT via `sys.modules['api.routes']` directly. Fixed by ALSO restoring parent-package attributes — without this, sibling tests (`test_plugins_panel`, `test_pr1350_sse_notify_correctness`, `test_version_badge`) that patch `api.routes.j` and call handlers via `import api.routes as routes` would fail because the patch hits one module object and the handler reads from another.
+
+### Tests
+
+4898 → **4947 collected, 4947 passing, 0 regressions** (+49 net new). Full suite ~140s on Python 3.11 (HERMES_HOME isolated). JS syntax check (`node -c`) clean on `static/commands.js`, `static/i18n.js`, `static/messages.js`. Browser API sanity harness (port 8789): all 11 endpoints + 20 QA tests PASS. Opus advisor pass: SHIP-READY, no blockers (2 follow-up items filed: goal hook firing on unrelated turns; English-only runtime strings in goal UI).
+
+### Pre-release verification
+
+- Full pytest under `HERMES_HOME` isolation: **4947 passed, 8 skipped, 1 xfailed, 2 xpassed, 8 subtests passed** in 140.41s.
+- Browser API harness against stage-323 on port 8789: all 11 endpoints + 20 QA tests PASS (110.66s for QA phase).
+- `node -c` on all 3 modified `static/*.js` files: clean.
+- Stage diff: 16 files, +2692/-105.
+- Opus advisor pass on stage-323 brief: VERDICT=SHIP-READY. No coexistence bugs between #1895 and #1866 (disjoint hunks in routes.py, SSE event names align, `_profiles_match` resolution unambiguous either way, no path collisions).
+- v0.51.27 fixes verified preserved: `_strip_workspace_prefix` (callers at routes.py:1446/1485), `on_interim_assistant` (streaming.py:2120), `_max_iterations_cfg` (streaming.py:2331-2410), `if input_tokens > 0:` guard (streaming.py:2933).
+- Pre-stamp re-fetch of #1866 (sha f2aacf4) + #1895 (sha 766c91e): both MERGEABLE, no force-push during Opus window.
+
+### Follow-up items (filed for next sweep)
+
+- **Goal hook fires on unrelated turns** — while a goal is `active`, every completed assistant turn runs `evaluate_goal_after_turn` and ticks `state.turns_used += 1`, even on user messages unrelated to the goal. UX surprise but not bug-broken; consider gating on `user_initiated` or a goal-context flag.
+- **English-only runtime strings in goal UI** — `messages.js:889` ("Evaluating goal progress…"), `commands.js:651` ("Working toward goal…"), `messages.js:914` ("Continuing toward goal…" toast); also backend strings in `goals.py` (`status_line`, "⊙ Goal set …", "⏸ Goal paused …", "↻ Continuing …"). The `cmd_goal` autocomplete description IS localized across all 9 locales — only the runtime status strings are missed.
+
 
 ### Fixed (4 PRs)
 
