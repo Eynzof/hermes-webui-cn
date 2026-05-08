@@ -49,26 +49,67 @@ def _cleanup_state_dir(state_dir: Path):
 
 
 def _reimport_mcp():
-    """Re-import mcp_server with current env vars and profile.
+    """Re-point mcp_server's module-level STATE_DIR / SESSION_DIR /
+    SESSION_INDEX_FILE / PROJECTS_FILE constants at the current
+    HERMES_WEBUI_STATE_DIR.
 
     Returns (mcp_module, profiles_module) — profiles_module is the
-    live api.profiles reference that the re-imported mcp_server uses.
+    live api.profiles reference.
+
+    NOTE: Does NOT use `del sys.modules[...]` or `importlib.reload(...)`.
+    Both patterns trigger a chain re-import inside the FastMCP / pydantic
+    stack that corrupts pydantic's `_generics._GENERIC_TYPES_CACHE`
+    (manifests as `KeyError: 'pydantic.root_model'` in unrelated
+    downstream tests in the full suite). Instead, we mutate the
+    constants in-place after the first one-time import, which is
+    behaviorally equivalent for these tests since the constants are
+    module-level Path objects used only to compute STATE_DIR-rooted
+    paths at call time.
     """
-    # Clear cached module and api submodules that cache paths
-    for key in list(sys.modules.keys()):
-        if key == 'mcp_server' or key.startswith('mcp_server.') or \
-           key == 'api.config' or key == 'api.models' or key == 'api.profiles':
-            del sys.modules[key]
+    state_dir = Path(os.environ['HERMES_WEBUI_STATE_DIR'])
 
-    import importlib
     import api.config as cfg
-    importlib.reload(cfg)
-
-    # Re-acquire api.profiles reference (old one is stale after sys.modules clear)
     import api.profiles as fresh_profiles
-    fresh_profiles._active_profile = 'default'
-
     import mcp_server as mod
+
+    # Re-point api.config module-level constants
+    cfg.STATE_DIR = state_dir
+    cfg.SESSION_DIR = state_dir / "sessions"
+    cfg.WORKSPACES_FILE = state_dir / "workspaces.json"
+    cfg.SETTINGS_FILE = state_dir / "settings.json"
+    cfg.LAST_WORKSPACE_FILE = state_dir / "last_workspace.txt"
+    cfg.PROJECTS_FILE = state_dir / "projects.json"
+    if hasattr(cfg, 'SESSION_INDEX_FILE'):
+        cfg.SESSION_INDEX_FILE = state_dir / "sessions" / "_index.json"
+
+    # Re-point mcp_server's imported aliases (they were copied at first
+    # import and don't pick up cfg mutations automatically).
+    mod.STATE_DIR = cfg.STATE_DIR
+    mod.SESSION_DIR = cfg.SESSION_DIR
+    mod.PROJECTS_FILE = cfg.PROJECTS_FILE
+    if hasattr(mod, 'SESSION_INDEX_FILE'):
+        mod.SESSION_INDEX_FILE = cfg.SESSION_INDEX_FILE
+
+    # api.models also imports STATE_DIR / PROJECTS_FILE etc. as module
+    # constants — re-point those too so load_projects() / save_projects()
+    # see the fresh STATE_DIR.
+    if 'api.models' in sys.modules:
+        models_mod = sys.modules['api.models']
+        if hasattr(models_mod, 'STATE_DIR'):
+            models_mod.STATE_DIR = cfg.STATE_DIR
+        if hasattr(models_mod, 'PROJECTS_FILE'):
+            models_mod.PROJECTS_FILE = cfg.PROJECTS_FILE
+        if hasattr(models_mod, 'SESSION_DIR'):
+            models_mod.SESSION_DIR = cfg.SESSION_DIR
+
+    # Re-evaluate WEBUI_URL from current env (PR #1895 made it env-aware
+    # but the value is computed once at module load; tests need to see
+    # current env state).
+    mod.WEBUI_HOST = os.environ.get("HERMES_WEBUI_HOST", "127.0.0.1")
+    mod.WEBUI_PORT = os.environ.get("HERMES_WEBUI_PORT", "8787")
+    mod.WEBUI_URL = f"http://{mod.WEBUI_HOST}:{mod.WEBUI_PORT}"
+
+    fresh_profiles._active_profile = 'default'
     return mod, fresh_profiles
 
 
@@ -292,7 +333,8 @@ class TestProfileScoping:
         to 'default'. A non-root profile must NOT see legacy untagged rows.
         """
         # Manually write a legacy untagged project (pre-#1614 schema)
-        from api.config import PROJECTS_FILE
+        import api.config as _cfg_mod
+        PROJECTS_FILE = _cfg_mod.PROJECTS_FILE
         legacy = [{
             "project_id": "legacy000001",
             "name": "LegacyUntagged",
@@ -317,7 +359,8 @@ class TestProfileScoping:
 
     async def test_legacy_untagged_rename_blocked_from_non_root(self):
         """Non-root profile cannot rename a legacy untagged project."""
-        from api.config import PROJECTS_FILE
+        import api.config as _cfg_mod
+        PROJECTS_FILE = _cfg_mod.PROJECTS_FILE
         legacy = [{
             "project_id": "legacy000002",
             "name": "Legacy",
@@ -517,7 +560,8 @@ class TestProfileCliOrdering:
         _profiles._active_profile = _profile_arg right after import). If a
         helper had latched the profile at import time, the override here
         would be too late and the test would see 'default'-tagged rows."""
-        from api.config import PROJECTS_FILE
+        import api.config as _cfg_mod
+        PROJECTS_FILE = _cfg_mod.PROJECTS_FILE
         # Pre-seed two projects: one for default, one for foo.
         seeded = [
             {"project_id": "p_default_0001", "name": "DefaultRow",
