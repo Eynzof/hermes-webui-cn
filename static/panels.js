@@ -1424,12 +1424,73 @@ function _kanbanBoardQuery(extra){
 }
 
 async function nudgeKanbanDispatcher(){
+  // Dry-run dispatch: show what WOULD be spawned, without actually spawning
+  // workers.  Uses ?dry_run=1 so the dispatcher reports its plan without
+  // mutating the board.  The result shape includes spawned/skipped_unassigned/
+  // skipped_nonspawnable/promoted/auto_blocked so users can diagnose why a
+  // Ready task isn't being picked up before they commit to a real run.
   try {
     const dispatchEndpoint = '/api/kanban/dispatch';
-    await api(dispatchEndpoint + '?dry_run=1&max=1' + (_kanbanCurrentBoard ? '&board=' + encodeURIComponent(_kanbanCurrentBoard) : ''), {method: 'POST'});
-    showToast(t('kanban_nudge_dispatcher'));
+    const result = await api(
+      dispatchEndpoint + '?dry_run=1&max=8' + (_kanbanCurrentBoard ? '&board=' + encodeURIComponent(_kanbanCurrentBoard) : ''),
+      {method: 'POST'},
+    );
+    showToast(_kanbanFormatDispatchResult(result, true), 'info', 6000);
     await loadKanban(true);
   } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); }
+}
+
+async function runKanbanDispatcher(){
+  // Real dispatch: claims Ready tasks and spawns worker subprocesses
+  // (one `hermes -p <assignee>` per claimed row, up to max=8 per call).
+  // Confirmation dialog first because this actually consumes API budget on
+  // each spawned worker.  Result toast surfaces what happened so users see
+  // the dispatcher actually doing work.
+  if (!_kanbanCurrentBoard) {
+    showToast(t('kanban_unavailable') || 'Kanban unavailable', 'error');
+    return;
+  }
+  const ok = await showConfirmDialog({
+    title: t('kanban_run_dispatcher') || 'Run dispatcher',
+    message: t('kanban_run_dispatcher_confirm')
+      || 'This will claim Ready tasks on this board and spawn worker subprocesses (one per task, up to 8 per click). Continue?',
+    confirmLabel: t('kanban_run_dispatcher') || 'Run dispatcher',
+  });
+  if (!ok) return;
+  try {
+    const dispatchEndpoint = '/api/kanban/dispatch';
+    const result = await api(
+      dispatchEndpoint + '?max=8' + (_kanbanCurrentBoard ? '&board=' + encodeURIComponent(_kanbanCurrentBoard) : ''),
+      {method: 'POST'},
+    );
+    showToast(_kanbanFormatDispatchResult(result, false), 'info', 8000);
+    await loadKanban(true);
+  } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); }
+}
+
+function _kanbanFormatDispatchResult(result, dryRun){
+  // Produce a human-readable one-line summary of dispatch_once's output so
+  // users can see exactly what happened rather than a generic "OK" toast.
+  const r = result || {};
+  const spawned = (r.spawned || []).length;
+  const promoted = r.promoted || 0;
+  const reclaimed = r.reclaimed || 0;
+  const skippedUnassigned = (r.skipped_unassigned || []).length;
+  const skippedNonspawnable = (r.skipped_nonspawnable || []).length;
+  const autoBlocked = (r.auto_blocked || []).length;
+  const timedOut = (r.timed_out || []).length;
+  const crashed = (r.crashed || []).length;
+  const verb = dryRun ? (t('kanban_dispatch_preview_prefix') || 'Preview:') : (t('kanban_dispatch_run_prefix') || 'Dispatched:');
+  const parts = [];
+  parts.push(spawned + ' ' + (t('kanban_dispatch_spawned') || 'spawned'));
+  if (promoted) parts.push(promoted + ' ' + (t('kanban_dispatch_promoted') || 'promoted'));
+  if (reclaimed) parts.push(reclaimed + ' ' + (t('kanban_dispatch_reclaimed') || 'reclaimed'));
+  if (skippedUnassigned) parts.push(skippedUnassigned + ' ' + (t('kanban_dispatch_skipped_unassigned') || 'skipped (no assignee)'));
+  if (skippedNonspawnable) parts.push(skippedNonspawnable + ' ' + (t('kanban_dispatch_skipped_nonspawnable') || 'skipped (unknown profile)'));
+  if (autoBlocked) parts.push(autoBlocked + ' ' + (t('kanban_dispatch_auto_blocked') || 'auto-blocked'));
+  if (timedOut) parts.push(timedOut + ' ' + (t('kanban_dispatch_timed_out') || 'timed out'));
+  if (crashed) parts.push(crashed + ' ' + (t('kanban_dispatch_crashed') || 'crashed'));
+  return verb + ' ' + parts.join(', ');
 }
 
 function _kanbanSelectedTaskIds(){
@@ -1596,48 +1657,240 @@ async function createKanbanTask(){
 // assignee, tenant, priority, status — see api/kanban_bridge.py:306).
 // ────────────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────────────
+// Kanban: create-task / edit-task modal (panel-head "+" + task-detail Edit
+// button entry points).
+//
+// Single modal serves both flows.  Title + submit-button labels and the
+// underlying submit verb (POST vs PATCH) flip based on `_kanbanTaskModalMode`.
+//
+// Same `.kanban-modal-overlay` shell as openKanbanCreateBoard() so the two
+// flows look and behave identically (centered card, dim backdrop, ESC closes,
+// click-on-backdrop closes). The modal markup lives in static/index.html as
+// #kanbanTaskModal — see the section just above </body>.
+//
+// The assignee field auto-completes against the union of (a) live Hermes
+// profile names from /api/profiles and (b) historical assignees on the
+// active board, with an inline hint that explains the dispatcher claim
+// contract — most users will pick a profile name from the dropdown rather
+// than type one.
+// ────────────────────────────────────────────────────────────────────────────
+
+let _kanbanTaskModalMode = 'create';   // 'create' | 'edit'
+let _kanbanTaskModalEditingId = null;  // task id when mode === 'edit'
+let _kanbanProfileNamesCache = null;   // populated lazily on first modal open
+// Status the modal *displayed* on edit-mode open.  If the user doesn't touch
+// the dropdown, we must NOT send `status` in the PATCH payload — otherwise
+// editing a task whose real status is non-editable in this dropdown
+// (running/blocked/done/archived → mapped to 'triage' for display) would
+// silently demote the task on save.  See the regression caught during PR
+// review: editing a 'running' task without touching status was reclaiming
+// the worker and moving the task back to triage.
+let _kanbanTaskModalInitialDisplayedStatus = null;
+
+async function _kanbanLoadProfileNames(){
+  // Hit /api/profiles once per session and cache; refresh is cheap if needed.
+  // Returns an array of profile names (sorted, default first if present).
+  if (Array.isArray(_kanbanProfileNamesCache)) return _kanbanProfileNamesCache;
+  try {
+    const data = await api('/api/profiles');
+    const profiles = Array.isArray(data && data.profiles) ? data.profiles : [];
+    const names = profiles.map(p => p && p.name).filter(Boolean);
+    // Stable order: default first, then alphabetical.
+    names.sort((a, b) => {
+      if (a === 'default') return -1;
+      if (b === 'default') return 1;
+      return a.localeCompare(b);
+    });
+    _kanbanProfileNamesCache = names;
+    return names;
+  } catch(_) {
+    _kanbanProfileNamesCache = [];
+    return [];
+  }
+}
+
+async function _kanbanPopulateAssigneeSelect(currentValue){
+  const sel = document.getElementById('kanbanTaskModalAssignee');
+  if (!sel) return;
+  // Profile names: the canonical set the dispatcher can claim.
+  const profileNames = await _kanbanLoadProfileNames();
+  // Historical assignees from the active board: include them so users who
+  // assigned to a CLI lane (e.g. orion-cc) before still see those values.
+  const historicalAssignees = (_kanbanBoard && Array.isArray(_kanbanBoard.assignees))
+    ? _kanbanBoard.assignees
+    : [];
+  // Build a final ordered list, deduping.  Profiles come first, then any
+  // historical assignees that aren't profiles (rare but keeps round-tripping
+  // correct for tasks created via CLI).
+  const seen = new Set();
+  const profiles = [];
+  for (const name of profileNames) {
+    if (!seen.has(name)) { profiles.push(name); seen.add(name); }
+  }
+  const extras = [];
+  for (const name of historicalAssignees) {
+    if (name && !seen.has(name)) { extras.push(name); seen.add(name); }
+  }
+  // If the current value isn't in either bucket (e.g. an old CLI-created
+  // assignee that's since been deleted), preserve it as a final option so
+  // editing the task doesn't silently change its assignee.
+  if (currentValue && !seen.has(currentValue)) {
+    extras.push(currentValue);
+    seen.add(currentValue);
+  }
+  // The empty value maps to null on submit (intentionally unassigned).  Keep
+  // it last so the default-selected option is the first profile, not "no one".
+  let html = '';
+  if (profiles.length) {
+    html += `<optgroup label="${esc(t('kanban_assignee_profiles_label') || 'Hermes profiles')}">`;
+    html += profiles.map(v => `<option value="${esc(v)}"${v === currentValue ? ' selected' : ''}>${esc(v)}</option>`).join('');
+    html += '</optgroup>';
+  }
+  if (extras.length) {
+    html += `<optgroup label="${esc(t('kanban_assignee_other_label') || 'Other (CLI lanes / removed profiles)')}">`;
+    html += extras.map(v => `<option value="${esc(v)}"${v === currentValue ? ' selected' : ''}>${esc(v)}</option>`).join('');
+    html += '</optgroup>';
+  }
+  // Final "no assignee" fallthrough — explicit so users know what they're choosing.
+  html += `<option value=""${(!currentValue) ? ' selected' : ''}>${esc(t('kanban_assignee_unassigned') || '— Unassigned (won\u2019t auto-run) —')}</option>`;
+  sel.innerHTML = html;
+}
+
 function openKanbanCreate(){
   // Make sure the user is on the kanban panel so the resulting board reload is
-  // visible behind the modal. Without this the modal would still work but the
-  // user could lose context on which panel they triggered it from.
+  // visible behind the modal.
   if (typeof switchPanel === 'function' && _currentPanel !== 'kanban') switchPanel('kanban');
   const modal = document.getElementById('kanbanTaskModal');
   if (!modal) return;
-  // Reset all form fields to defaults.
-  const titleEl = document.getElementById('kanbanTaskModalTitleInput');
-  const bodyEl = document.getElementById('kanbanTaskModalBody');
-  const statusEl = document.getElementById('kanbanTaskModalStatus');
-  const assigneeEl = document.getElementById('kanbanTaskModalAssignee');
-  const tenantEl = document.getElementById('kanbanTaskModalTenant');
-  const priorityEl = document.getElementById('kanbanTaskModalPriority');
-  const errEl = document.getElementById('kanbanTaskModalError');
-  const submitBtn = document.getElementById('kanbanTaskModalSubmit');
-  if (titleEl) titleEl.value = '';
-  if (bodyEl) bodyEl.value = '';
-  if (statusEl) statusEl.value = 'triage';
-  if (assigneeEl) assigneeEl.value = '';
-  if (tenantEl) tenantEl.value = '';
-  if (priorityEl) priorityEl.value = '0';
-  if (errEl) errEl.textContent = '';
-  if (submitBtn) submitBtn.disabled = false;
-  // Populate datalists from the currently-loaded board so the user sees the
-  // assignees / tenants the dispatcher already knows about.
-  const assignees = (_kanbanBoard && Array.isArray(_kanbanBoard.assignees)) ? _kanbanBoard.assignees : [];
-  const tenants = (_kanbanBoard && Array.isArray(_kanbanBoard.tenants)) ? _kanbanBoard.tenants : [];
-  const aList = document.getElementById('kanbanTaskModalAssigneeList');
-  const tList = document.getElementById('kanbanTaskModalTenantList');
-  if (aList) aList.innerHTML = assignees.map(v => `<option value="${esc(v)}"></option>`).join('');
-  if (tList) tList.innerHTML = tenants.map(v => `<option value="${esc(v)}"></option>`).join('');
+  _kanbanTaskModalMode = 'create';
+  _kanbanTaskModalEditingId = null;
+  _kanbanTaskModalInitialDisplayedStatus = null;  // create mode: always send status
+  // Default new tasks to "ready" so they're immediately claimable by the
+  // dispatcher (assuming the user picks an assignee).  Triage is for staging
+  // tasks that need human review before being marked actionable; users who
+  // want it can still pick it from the status dropdown.
+  _kanbanResetTaskModalFields({status: 'ready'});
+  _kanbanSetTaskModalLabels('create');
+  _kanbanPopulateAssigneeSelect('').then(() => {
+    // After the dropdown is populated, default-select the first profile (not
+    // the "Unassigned" fallthrough).  This is the right hint: most users want
+    // to assign to *something* — they can pick "Unassigned" deliberately.
+    const sel = document.getElementById('kanbanTaskModalAssignee');
+    if (sel && sel.options.length > 0 && sel.value === '') {
+      const firstProfile = Array.from(sel.options).find(opt => opt.value !== '');
+      if (firstProfile) sel.value = firstProfile.value;
+    }
+  });
+  _kanbanPopulateTenantDatalist();
   modal.hidden = false;
-  // Auto-focus title field on open. setTimeout to wait for paint.
-  setTimeout(() => { if (titleEl) titleEl.focus(); }, 50);
-  // Bind ESC to close, and Enter on simple inputs to submit.
+  setTimeout(() => {
+    const titleEl = document.getElementById('kanbanTaskModalTitleInput');
+    if (titleEl) titleEl.focus();
+  }, 50);
   document.addEventListener('keydown', _kanbanTaskModalKey);
+}
+
+async function openKanbanEdit(taskId){
+  // Triggered by the Edit button on the task detail view.  Fetches the task
+  // (rather than relying on whatever's cached locally) so the modal always
+  // reflects authoritative server state.
+  if (!taskId) return;
+  if (typeof switchPanel === 'function' && _currentPanel !== 'kanban') switchPanel('kanban');
+  const modal = document.getElementById('kanbanTaskModal');
+  if (!modal) return;
+  let task = null;
+  try {
+    const data = await api('/api/kanban/tasks/' + encodeURIComponent(taskId) + _kanbanBoardQuery());
+    task = data && data.task;
+  } catch(e) {
+    showToast((t('kanban_unavailable') || 'Kanban unavailable') + ': ' + (e.message || e), 'error');
+    return;
+  }
+  if (!task) return;
+  _kanbanTaskModalMode = 'edit';
+  _kanbanTaskModalEditingId = task.id;
+  // Track the displayed status so submitKanbanTaskModal can detect whether
+  // the user actually picked a new value vs. the dropdown's mapped default.
+  // Without this, editing a 'running'/'blocked'/'done'/'archived' task whose
+  // real status maps to 'triage' for display would silently demote the task
+  // (the mapped 'triage' would land in the PATCH payload, and _patch_task
+  // would call _set_status_direct → reclaim worker → move to triage).
+  const initialDisplayedStatus = _kanbanEditableStatusFor(task.status);
+  _kanbanTaskModalInitialDisplayedStatus = initialDisplayedStatus;
+  _kanbanResetTaskModalFields({
+    title: task.title || '',
+    body: task.body || '',
+    status: initialDisplayedStatus,
+    tenant: task.tenant || '',
+    priority: typeof task.priority === 'number' ? task.priority : 0,
+  });
+  // Populate the assignee select AFTER reset so the option exists when we
+  // call sel.value = currentAssignee.
+  await _kanbanPopulateAssigneeSelect(task.assignee || '');
+  _kanbanSetTaskModalLabels('edit');
+  _kanbanPopulateTenantDatalist();
+  modal.hidden = false;
+  setTimeout(() => {
+    const titleEl = document.getElementById('kanbanTaskModalTitleInput');
+    if (titleEl) { titleEl.focus(); titleEl.select(); }
+  }, 50);
+  document.addEventListener('keydown', _kanbanTaskModalKey);
+}
+
+function _kanbanEditableStatusFor(status){
+  // The modal's status select only offers triage/todo/ready (the user-writable
+  // states).  blocked/running/done/archived are reached via the detail-view
+  // status buttons or the dispatcher.  Map non-editable states to a sensible
+  // default so the user can still change them via the buttons after saving.
+  const editable = new Set(['triage', 'todo', 'ready']);
+  return editable.has(status) ? status : 'triage';
+}
+
+function _kanbanResetTaskModalFields(values){
+  const v = values || {};
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = (val == null ? '' : String(val));
+  };
+  set('kanbanTaskModalTitleInput', v.title || '');
+  set('kanbanTaskModalBody', v.body || '');
+  set('kanbanTaskModalStatus', v.status || 'triage');
+  // Assignee handled separately by _kanbanPopulateAssigneeSelect() because
+  // it's a <select> populated from /api/profiles + board history; setting
+  // .value before the options exist would silently fail.
+  set('kanbanTaskModalTenant', v.tenant || '');
+  set('kanbanTaskModalPriority', v.priority != null ? v.priority : 0);
+  const errEl = document.getElementById('kanbanTaskModalError');
+  if (errEl) { errEl.textContent = ''; delete errEl.dataset.warningShown; }
+  const submitBtn = document.getElementById('kanbanTaskModalSubmit');
+  if (submitBtn) submitBtn.disabled = false;
+}
+
+function _kanbanSetTaskModalLabels(mode){
+  const titleH = document.getElementById('kanbanTaskModalTitle');
+  const submitBtn = document.getElementById('kanbanTaskModalSubmit');
+  if (mode === 'edit') {
+    if (titleH) titleH.textContent = t('kanban_edit_task') || 'Edit task';
+    if (submitBtn) submitBtn.textContent = t('save') || 'Save';
+  } else {
+    if (titleH) titleH.textContent = t('kanban_new_task') || 'New task';
+    if (submitBtn) submitBtn.textContent = t('create') || 'Create';
+  }
+}
+
+function _kanbanPopulateTenantDatalist(){
+  const tenants = (_kanbanBoard && Array.isArray(_kanbanBoard.tenants)) ? _kanbanBoard.tenants : [];
+  const tList = document.getElementById('kanbanTaskModalTenantList');
+  if (tList) tList.innerHTML = tenants.map(v => `<option value="${esc(v)}"></option>`).join('');
 }
 
 function closeKanbanTaskModal(){
   const modal = document.getElementById('kanbanTaskModal');
   if (modal) modal.hidden = true;
+  _kanbanTaskModalMode = 'create';
+  _kanbanTaskModalEditingId = null;
+  _kanbanTaskModalInitialDisplayedStatus = null;
   document.removeEventListener('keydown', _kanbanTaskModalKey);
 }
 
@@ -1675,28 +1928,75 @@ async function submitKanbanTaskModal(){
     if (titleEl) titleEl.focus();
     return;
   }
-  // Build payload — only include fields the user actually filled in so the
-  // backend can apply its own defaults rather than us forcing empty strings.
+  // Build payload — for create we omit defaulted fields so the backend chooses;
+  // for edit we send every field so users can clear assignee/tenant/body.
+  const isEdit = _kanbanTaskModalMode === 'edit';
   const payload = {title};
-  if (bodyEl && bodyEl.value.trim()) payload.body = bodyEl.value;
-  if (statusEl && statusEl.value) payload.status = statusEl.value;
-  if (assigneeEl && assigneeEl.value.trim()) payload.assignee = assigneeEl.value.trim();
-  if (tenantEl && tenantEl.value.trim()) payload.tenant = tenantEl.value.trim();
-  if (priorityEl && priorityEl.value !== '' && priorityEl.value !== '0') {
-    const n = parseInt(priorityEl.value, 10);
-    if (!Number.isNaN(n)) payload.priority = n;
+  const bodyVal = bodyEl ? bodyEl.value : '';
+  const assigneeVal = assigneeEl ? assigneeEl.value.trim() : '';
+  const tenantVal = tenantEl ? tenantEl.value.trim() : '';
+  const statusVal = statusEl ? statusEl.value : '';
+  const priorityRaw = priorityEl ? priorityEl.value : '';
+  if (isEdit) {
+    payload.body = bodyVal;
+    payload.assignee = assigneeVal || null;
+    payload.tenant = tenantVal || null;
+    // Only send status if the user actually changed the dropdown from the
+    // value the modal opened with.  Otherwise editing a 'running'/'blocked'/
+    // 'done'/'archived' task — whose real status maps to the dropdown's
+    // 'triage' default — would silently demote the task on every save.
+    if (statusVal && statusVal !== _kanbanTaskModalInitialDisplayedStatus) {
+      payload.status = statusVal;
+    }
+    const n = parseInt(priorityRaw, 10);
+    payload.priority = Number.isNaN(n) ? 0 : n;
+  } else {
+    if (bodyVal.trim()) payload.body = bodyVal;
+    if (statusVal) payload.status = statusVal;
+    if (assigneeVal) payload.assignee = assigneeVal;
+    if (tenantVal) payload.tenant = tenantVal;
+    if (priorityRaw !== '' && priorityRaw !== '0') {
+      const n = parseInt(priorityRaw, 10);
+      if (!Number.isNaN(n)) payload.priority = n;
+    }
+  }
+  // Soft warning: a Ready task with the explicit "Unassigned" option will sit
+  // forever because the dispatcher skips unassigned rows (kanban_db.py:3567).
+  // The dropdown now makes this an explicit choice (the user picked "—
+  // Unassigned (won't auto-run) —"), but we still surface a one-time confirm
+  // so they don't lose work to a typo.
+  if (statusVal === 'ready' && !assigneeVal) {
+    if (errEl && !errEl.dataset.warningShown) {
+      errEl.textContent = t('kanban_ready_needs_assignee')
+        || 'You picked Unassigned + Ready. The dispatcher will skip this task. Submit again to confirm, or pick a profile.';
+      errEl.dataset.warningShown = '1';
+      const sel = document.getElementById('kanbanTaskModalAssignee');
+      if (sel) sel.focus();
+      return;
+    }
   }
   if (submitBtn) submitBtn.disabled = true;
-  if (errEl) errEl.textContent = '';
+  if (errEl) { errEl.textContent = ''; delete errEl.dataset.warningShown; }
   try {
-    const created = await api('/api/kanban/tasks' + _kanbanBoardQuery(), {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    let saved;
+    if (isEdit && _kanbanTaskModalEditingId) {
+      saved = await api(
+        '/api/kanban/tasks/' + encodeURIComponent(_kanbanTaskModalEditingId) + _kanbanBoardQuery(),
+        {method: 'PATCH', body: JSON.stringify(payload)},
+      );
+    } else {
+      saved = await api('/api/kanban/tasks' + _kanbanBoardQuery(), {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
     closeKanbanTaskModal();
     await loadKanban(true);
-    if (created && created.task && created.task.id) {
-      await loadKanbanTask(created.task.id);
+    const savedId = saved && saved.task && saved.task.id;
+    if (savedId) {
+      await loadKanbanTask(savedId);
+    } else if (isEdit && _kanbanTaskModalEditingId) {
+      await loadKanbanTask(_kanbanTaskModalEditingId);
     }
   } catch(e) {
     if (errEl) errEl.textContent = (e.message || String(e));
@@ -1751,6 +2051,7 @@ function _kanbanRenderTaskDetail(data){
   return `<div class="kanban-task-preview-header">
       <button class="btn secondary kanban-back-btn" onclick="closeKanbanTaskDetail()">${esc(t('kanban_back_to_board'))}</button>
       <div class="kanban-task-preview-title">${esc(title)}</div>
+      <button class="btn secondary kanban-edit-btn" onclick="openKanbanEdit('${esc(task.id)}')" data-i18n="kanban_edit_task" title="${esc(t('kanban_edit_task') || 'Edit task')}">${esc(t('kanban_edit_task') || 'Edit task')}</button>
     </div>
     <div class="kanban-task-preview-body">${esc(body)}</div>
     ${meta.length ? `<div class="kanban-meta">${esc(meta.join(' · '))}</div>` : ''}

@@ -3490,12 +3490,29 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-modal-row{margin-bottom:10px;}
 .kanban-modal-row label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:500;}
 .kanban-modal-row input[type="text"],
+.kanban-modal-row input[type="number"],
 .kanban-modal-row input[type="color"],
+.kanban-modal-row select,
 .kanban-modal-row textarea{
   width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;
   color:var(--text);padding:8px 10px;font:inherit;font-size:13px;box-sizing:border-box;
 }
+/* Native select chevron — make sure the dropdown reads as a dropdown, not as
+   a flat text input. Custom SVG arrow + appearance:none for cross-browser
+   consistency in dark theme. */
+.kanban-modal-row select{
+  -webkit-appearance:none;-moz-appearance:none;appearance:none;
+  padding-right:32px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2390a0b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+  background-size:16px;
+}
+.kanban-modal-row select:focus{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFD700' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
 .kanban-modal-row input:focus,
+.kanban-modal-row select:focus,
 .kanban-modal-row textarea:focus{
   outline:none;border-color:var(--accent, #FFD700);
 }
@@ -3503,6 +3520,9 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-modal-row input[type="color"]{height:36px;padding:2px;cursor:pointer;}
 .kanban-modal-row-inline{display:flex;gap:10px;}
 .kanban-modal-row-inline > *{flex:1;min-width:0;}
+.kanban-modal-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px;}
+.kanban-modal-hint code{background:var(--input-bg);padding:1px 5px;border-radius:4px;font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11px;color:var(--text);}
+.kanban-modal-hint em{color:var(--text);font-style:normal;font-weight:600;}
 .kanban-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
 .kanban-modal-error{
   color:var(--danger,var(--error,#f87171));
@@ -3520,7 +3540,21 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-task-preview{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);}
 .kanban-task-preview-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
 .kanban-back-btn{flex-shrink:0;font-size:11px;padding:4px 8px;}
-.kanban-task-preview-title{font-size:14px;font-weight:650;color:var(--text);margin-bottom:0;}
+.kanban-edit-btn{flex-shrink:0;font-size:11px;padding:4px 10px;margin-left:auto;}
+.kanban-task-preview-title{flex:1;font-size:14px;font-weight:650;color:var(--text);margin-bottom:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Run dispatcher button: visually distinct from the dry-run preview ▶ button
+   sitting next to it so users can tell at a glance which one actually spawns
+   workers.  Uses the accent border + tinted background but keeps the
+   panel-head sizing so it doesn't stand out as inconsistent.  See PR for
+   #1968 / kanban edit+run gap fix. */
+.kanban-run-dispatch-btn{
+  border-color:color-mix(in srgb,var(--accent,#FFD700) 60%,var(--border));
+  background:color-mix(in srgb,var(--accent,#FFD700) 14%,transparent);
+  color:var(--accent,#FFD700);
+}
+.kanban-run-dispatch-btn:hover{
+  background:color-mix(in srgb,var(--accent,#FFD700) 24%,transparent);
+}
 .kanban-task-preview-body{font-size:12px;color:var(--muted);line-height:1.45;white-space:pre-wrap;margin-bottom:6px;}
 .kanban-status-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
 .kanban-status-actions .btn{font-size:11px;padding:4px 8px;}
