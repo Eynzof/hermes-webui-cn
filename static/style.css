@@ -3504,7 +3504,15 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-modal-row-inline{display:flex;gap:10px;}
 .kanban-modal-row-inline > *{flex:1;min-width:0;}
 .kanban-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
-.kanban-modal-error{color:var(--danger);font-size:11px;margin-top:6px;min-height:14px;}
+.kanban-modal-error{
+  color:var(--danger,var(--error,#f87171));
+  font-size:12px;font-weight:500;margin-top:8px;min-height:14px;
+}
+.kanban-modal-error:not(:empty){
+  padding:8px 10px;border-radius:8px;
+  background:color-mix(in srgb,var(--danger,var(--error,#f87171)) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--danger,var(--error,#f87171)) 35%,transparent);
+}
 .kanban-empty{padding:12px;color:var(--muted);font-size:12px;text-align:center;border:1px dashed var(--border);border-radius:8px;}
 
 .kanban-new-task-row{display:flex;gap:6px;align-items:center;}

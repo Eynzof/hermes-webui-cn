@@ -1566,7 +1566,14 @@ function _kanbanLinksHtml(links){
 async function createKanbanTask(){
   const input = document.getElementById('kanbanNewTaskTitle');
   const title = input ? input.value.trim() : '';
-  if (!title) return;
+  if (!title) {
+    // Empty inline input (or a click on the panel-head "+" via openKanbanCreate)
+    // — open the full create-task modal so the user has somewhere obvious to
+    // type and configure the task. Mirrors the cron / skills pattern of routing
+    // header "+" clicks through to a clearly-modal create surface.
+    openKanbanCreate();
+    return;
+  }
   try {
     const created = await api('/api/kanban/tasks' + _kanbanBoardQuery(), {
       method: 'POST',
@@ -1576,6 +1583,125 @@ async function createKanbanTask(){
     await loadKanban(true);
     if (created && created.task && created.task.id) await loadKanbanTask(created.task.id);
   } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Kanban: create-task modal (panel-head "+" button entry point).
+//
+// Same `.kanban-modal-overlay` shell as openKanbanCreateBoard() so the two
+// flows look and behave identically (centered card, dim backdrop, ESC closes,
+// click-on-backdrop closes). The modal markup lives in static/index.html as
+// #kanbanTaskModal — see the section just above </body>. Submit hits the
+// existing /api/kanban/tasks POST endpoint (which already accepts title, body,
+// assignee, tenant, priority, status — see api/kanban_bridge.py:306).
+// ────────────────────────────────────────────────────────────────────────────
+
+function openKanbanCreate(){
+  // Make sure the user is on the kanban panel so the resulting board reload is
+  // visible behind the modal. Without this the modal would still work but the
+  // user could lose context on which panel they triggered it from.
+  if (typeof switchPanel === 'function' && _currentPanel !== 'kanban') switchPanel('kanban');
+  const modal = document.getElementById('kanbanTaskModal');
+  if (!modal) return;
+  // Reset all form fields to defaults.
+  const titleEl = document.getElementById('kanbanTaskModalTitleInput');
+  const bodyEl = document.getElementById('kanbanTaskModalBody');
+  const statusEl = document.getElementById('kanbanTaskModalStatus');
+  const assigneeEl = document.getElementById('kanbanTaskModalAssignee');
+  const tenantEl = document.getElementById('kanbanTaskModalTenant');
+  const priorityEl = document.getElementById('kanbanTaskModalPriority');
+  const errEl = document.getElementById('kanbanTaskModalError');
+  const submitBtn = document.getElementById('kanbanTaskModalSubmit');
+  if (titleEl) titleEl.value = '';
+  if (bodyEl) bodyEl.value = '';
+  if (statusEl) statusEl.value = 'triage';
+  if (assigneeEl) assigneeEl.value = '';
+  if (tenantEl) tenantEl.value = '';
+  if (priorityEl) priorityEl.value = '0';
+  if (errEl) errEl.textContent = '';
+  if (submitBtn) submitBtn.disabled = false;
+  // Populate datalists from the currently-loaded board so the user sees the
+  // assignees / tenants the dispatcher already knows about.
+  const assignees = (_kanbanBoard && Array.isArray(_kanbanBoard.assignees)) ? _kanbanBoard.assignees : [];
+  const tenants = (_kanbanBoard && Array.isArray(_kanbanBoard.tenants)) ? _kanbanBoard.tenants : [];
+  const aList = document.getElementById('kanbanTaskModalAssigneeList');
+  const tList = document.getElementById('kanbanTaskModalTenantList');
+  if (aList) aList.innerHTML = assignees.map(v => `<option value="${esc(v)}"></option>`).join('');
+  if (tList) tList.innerHTML = tenants.map(v => `<option value="${esc(v)}"></option>`).join('');
+  modal.hidden = false;
+  // Auto-focus title field on open. setTimeout to wait for paint.
+  setTimeout(() => { if (titleEl) titleEl.focus(); }, 50);
+  // Bind ESC to close, and Enter on simple inputs to submit.
+  document.addEventListener('keydown', _kanbanTaskModalKey);
+}
+
+function closeKanbanTaskModal(){
+  const modal = document.getElementById('kanbanTaskModal');
+  if (modal) modal.hidden = true;
+  document.removeEventListener('keydown', _kanbanTaskModalKey);
+}
+
+function _kanbanTaskModalKey(ev){
+  if (ev.key === 'Escape') {
+    ev.preventDefault();
+    closeKanbanTaskModal();
+    return;
+  }
+  if (ev.key === 'Enter' && !ev.shiftKey) {
+    // Enter submits except when the focus is in the description textarea
+    // (where Enter should insert a newline).
+    const target = ev.target;
+    if (target && target.tagName === 'TEXTAREA') return;
+    const modal = document.getElementById('kanbanTaskModal');
+    if (modal && !modal.hidden) {
+      ev.preventDefault();
+      submitKanbanTaskModal();
+    }
+  }
+}
+
+async function submitKanbanTaskModal(){
+  const titleEl = document.getElementById('kanbanTaskModalTitleInput');
+  const bodyEl = document.getElementById('kanbanTaskModalBody');
+  const statusEl = document.getElementById('kanbanTaskModalStatus');
+  const assigneeEl = document.getElementById('kanbanTaskModalAssignee');
+  const tenantEl = document.getElementById('kanbanTaskModalTenant');
+  const priorityEl = document.getElementById('kanbanTaskModalPriority');
+  const errEl = document.getElementById('kanbanTaskModalError');
+  const submitBtn = document.getElementById('kanbanTaskModalSubmit');
+  const title = titleEl ? titleEl.value.trim() : '';
+  if (!title) {
+    if (errEl) errEl.textContent = t('kanban_title_required') || 'Title is required.';
+    if (titleEl) titleEl.focus();
+    return;
+  }
+  // Build payload — only include fields the user actually filled in so the
+  // backend can apply its own defaults rather than us forcing empty strings.
+  const payload = {title};
+  if (bodyEl && bodyEl.value.trim()) payload.body = bodyEl.value;
+  if (statusEl && statusEl.value) payload.status = statusEl.value;
+  if (assigneeEl && assigneeEl.value.trim()) payload.assignee = assigneeEl.value.trim();
+  if (tenantEl && tenantEl.value.trim()) payload.tenant = tenantEl.value.trim();
+  if (priorityEl && priorityEl.value !== '' && priorityEl.value !== '0') {
+    const n = parseInt(priorityEl.value, 10);
+    if (!Number.isNaN(n)) payload.priority = n;
+  }
+  if (submitBtn) submitBtn.disabled = true;
+  if (errEl) errEl.textContent = '';
+  try {
+    const created = await api('/api/kanban/tasks' + _kanbanBoardQuery(), {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    closeKanbanTaskModal();
+    await loadKanban(true);
+    if (created && created.task && created.task.id) {
+      await loadKanbanTask(created.task.id);
+    }
+  } catch(e) {
+    if (errEl) errEl.textContent = (e.message || String(e));
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
 async function updateKanbanTask(taskId, patch){

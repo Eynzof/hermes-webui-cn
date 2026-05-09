@@ -80,6 +80,108 @@ def test_kanban_write_mvp_has_native_controls_and_api_calls():
     assert "kanban-comment-form" in PANELS
 
 
+def test_kanban_new_task_header_button_opens_modal():
+    """Regression: the panel-head '+' button must open a real `.kanban-modal-overlay`
+    create-task modal (matching the existing create-board modal pattern in the same
+    file) — NOT silently return when the inline #kanbanNewTaskTitle input is empty.
+
+    Previously the header button was wired straight to createKanbanTask(), which
+    silently early-exits on empty title — the button looked completely dead.
+    Now the header button calls openKanbanCreate(), which opens the
+    #kanbanTaskModal overlay with title / description / status / priority /
+    assignee / tenant fields.
+    """
+    # 1. Header "+" button is wired to openKanbanCreate(), NOT createKanbanTask().
+    assert 'id="kanbanNewTaskBtn"' in INDEX
+    btn_html = INDEX[INDEX.find('id="kanbanNewTaskBtn"'):]
+    btn_html = btn_html[: btn_html.find("</button>") + len("</button>")]
+    assert 'onclick="openKanbanCreate()"' in btn_html, (
+        "Panel-head '+' button must call openKanbanCreate() (modal), not "
+        "createKanbanTask() directly (which silently returns on empty title)."
+    )
+
+    # 2. The create-task modal markup exists in index.html, with all the field
+    #    ids the JS / API contract expects.
+    assert 'id="kanbanTaskModal"' in INDEX
+    assert 'class="kanban-modal-overlay"' in INDEX[INDEX.find('id="kanbanTaskModal"') - 80:]
+    for field_id in (
+        "kanbanTaskModalTitleInput",
+        "kanbanTaskModalBody",
+        "kanbanTaskModalStatus",
+        "kanbanTaskModalPriority",
+        "kanbanTaskModalAssignee",
+        "kanbanTaskModalTenant",
+        "kanbanTaskModalError",
+        "kanbanTaskModalSubmit",
+    ):
+        assert f'id="{field_id}"' in INDEX, f"create-task modal missing #{field_id}"
+
+    # 3. Modal closes via Cancel button AND backdrop click AND ESC.
+    assert 'onclick="closeKanbanTaskModal()"' in INDEX
+    assert "if(event.target===this)closeKanbanTaskModal()" in INDEX
+
+    # 4. openKanbanCreate() unhides the modal, focuses the title field, populates
+    #    assignee/tenant datalists, binds keydown listener.
+    assert "function openKanbanCreate()" in PANELS
+    open_fn = re.search(
+        r"function openKanbanCreate\(\)\{(.*?)\n\}", PANELS, re.DOTALL
+    )
+    assert open_fn, "openKanbanCreate() not found"
+    body = open_fn.group(1)
+    assert "modal.hidden = false" in body
+    assert "kanbanTaskModalAssigneeList" in body
+    assert "kanbanTaskModalTenantList" in body
+    assert "_kanbanTaskModalKey" in body  # ESC + Enter handler attached
+
+    # 5. closeKanbanTaskModal() hides the modal and unbinds the listener.
+    assert "function closeKanbanTaskModal()" in PANELS
+    close_fn = re.search(
+        r"function closeKanbanTaskModal\(\)\{(.*?)\n\}", PANELS, re.DOTALL
+    )
+    assert close_fn and "modal.hidden = true" in close_fn.group(1)
+    assert "removeEventListener('keydown', _kanbanTaskModalKey)" in close_fn.group(1)
+
+    # 6. ESC closes; Enter submits (except in the description textarea).
+    assert "function _kanbanTaskModalKey" in PANELS
+    key_fn = re.search(
+        r"function _kanbanTaskModalKey\([^)]*\)\{(.*?)\n\}", PANELS, re.DOTALL
+    )
+    assert key_fn
+    key_body = key_fn.group(1)
+    assert "ev.key === 'Escape'" in key_body
+    assert "ev.key === 'Enter'" in key_body
+    assert "TEXTAREA" in key_body  # textarea exception preserved
+
+    # 7. submitKanbanTaskModal() POSTs to /api/kanban/tasks, closes modal,
+    #    reloads board, opens detail.
+    assert "async function submitKanbanTaskModal()" in PANELS
+    submit_fn = re.search(
+        r"async function submitKanbanTaskModal\(\)\{(.*?)\n\}", PANELS, re.DOTALL
+    )
+    assert submit_fn, "submitKanbanTaskModal() not found"
+    submit_body = submit_fn.group(1)
+    assert "api('/api/kanban/tasks'" in submit_body
+    assert "method: 'POST'" in submit_body
+    assert "JSON.stringify(payload)" in submit_body
+    assert "closeKanbanTaskModal()" in submit_body
+    assert "loadKanban(true)" in submit_body
+    assert "loadKanbanTask" in submit_body
+
+    # 8. Inline quick-add still works for power-users — typing a title + Enter
+    #    creates immediately. Empty submit falls through to the modal.
+    assert "async function createKanbanTask()" in PANELS
+    quick_add = re.search(
+        r"async function createKanbanTask\(\)\{(.*?)\n\}", PANELS, re.DOTALL
+    )
+    assert quick_add
+    qa_body = quick_add.group(1)
+    assert "openKanbanCreate()" in qa_body, (
+        "Empty inline-input submit must open the modal, not silently return."
+    )
+    assert "api('/api/kanban/tasks'" in qa_body
+
+
+
 def test_kanban_board_has_native_css_classes():
     for selector in (
         ".kanban-board",
