@@ -22,6 +22,7 @@
 | P-004 | 同步到 cnb.cool 镜像的 CI workflow | `.github/workflows/sync-to-cnb-mirror.yml` |
 | P-005 | 设置页 sidebar 6 个 tab 标签中文化 | `static/index.html`（5 处补 `data-i18n`），`static/i18n.js`（en 加 `settings_tab_plugins`，zh 翻译 5 个 tab key + `providers_tab_title`） |
 | P-006 | README 加"检查更新走哪"段落 | `README.md` |
+| P-007 | Providers 面板中文化（20 个 zh stub 翻译 + quota 卡片硬编码 i18n 化） | `static/i18n.js`（en 加 7 个 quota key，zh 翻译 20 个 providers stub + `settings_dropdown_providers` + 加 7 个 quota key 中文），`static/panels.js`（quota 卡片标题/兜底/状态徽标走 t()，加 `_quotaStateLabel` 辅助函数） |
 
 新增补丁约定：
 - 单一关切（不要把多个无关改动塞进同一个 P）

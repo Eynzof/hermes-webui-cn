@@ -5520,19 +5520,26 @@ function _buildProviderQuotaCard(status){
       <div class="provider-quota-metric"><span>Limit</span><strong>${esc(_formatProviderQuotaMoney(quota.limit))}</strong></div>
     `;
   }else{
-    body=`<div class="provider-quota-message">${esc(status.message||'Quota status unavailable')}</div>`;
+    body=`<div class="provider-quota-message">${esc(status.message||t('provider_quota_unavailable_fallback'))}</div>`;
   }
   card.innerHTML=`
     <div class="provider-quota-header">
       <div>
-        <div class="provider-quota-title">Active provider quota</div>
+        <div class="provider-quota-title">${esc(t('provider_quota_active_title'))}</div>
         <div class="provider-quota-subtitle">${esc(provider)}</div>
       </div>
-      <span class="provider-quota-badge">${esc(state.replace(/_/g,' '))}</span>
+      <span class="provider-quota-badge">${esc(_quotaStateLabel(state))}</span>
     </div>
     <div class="provider-quota-body">${body}</div>
   `;
   return card;
+}
+
+function _quotaStateLabel(state){
+  if(!state) return '';
+  const key='provider_quota_state_'+state;
+  const v=t(key);
+  return (v===key) ? state.replace(/_/g,' ') : v;
 }
 
 function _buildProviderCard(p){
