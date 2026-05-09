@@ -476,6 +476,7 @@ const LOCALES = {
     settings_tab_conversation: 'Conversation',
     settings_tab_appearance: 'Appearance',
     settings_tab_preferences: 'Preferences',
+    settings_tab_plugins: 'Plugins',
     settings_tab_system: 'System',
     settings_title: 'Settings',
     settings_save_btn: 'Save Settings',
