@@ -7358,7 +7358,7 @@ const LOCALES = {
     settings_label_workspace_panel_open: '默认保持工作区面板打开',
     settings_desc_workspace_panel_open: '启用后，工作区/文件浏览器面板会在每次新会话时自动打开。您仍可随时手动关闭。',
     settings_label_session_jump_buttons: '显示会话跳转按钮',
-    settings_desc_session_jump_buttons: '阅读较长会话历史时显示悬浮的开头和结尾按钮。',
+    settings_desc_session_jump_buttons: '阅读长会话时显示悬浮的"开始"与"结束"按钮。',
 
     settings_label_session_endless_scroll: '向上滚动时加载更早的消息',
 
