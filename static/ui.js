@@ -3635,11 +3635,11 @@ function renderSystemHealth(payload){
   const status=$('systemHealthStatus');
   if(!panel) return;
   if(!payload||payload.available===false){
-    setSystemHealthUnavailable('Unavailable');
+    setSystemHealthUnavailable(t('system_health_status_unavailable'));
     return;
   }
   panel.classList.remove('loading','unavailable');
-  if(status) status.textContent=payload.status==='partial'?'Partial':'Live';
+  if(status) status.textContent=payload.status==='partial'?t('system_health_status_partial'):t('system_health_status_live');
   _updateSystemHealthMetric('cpu',payload.cpu);
   _updateSystemHealthMetric('memory',payload.memory);
   _updateSystemHealthMetric('disk',payload.disk);
@@ -3651,7 +3651,7 @@ async function pollSystemHealth(){
     const payload=await api('/api/system/health');
     renderSystemHealth(payload);
   }catch(_){
-    setSystemHealthUnavailable('Unavailable');
+    setSystemHealthUnavailable(t('system_health_status_unavailable'));
   }
 }
 function _systemHealthPanelIsVisible(){

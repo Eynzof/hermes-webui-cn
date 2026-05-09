@@ -2315,7 +2315,7 @@ def _build_llm_wiki_status() -> dict:
             "path_configured": path_configured,
             "path_source": path_source,
             "toggle_available": False,
-            "toggle_reason": "Hermes Agent exposes WIKI_PATH/wiki.path for location, but no stable on/off config flag is currently available.",
+            "toggle_reason": "Hermes Agent 通过 WIKI_PATH/wiki.path 暴露存储路径，但目前没有稳定的启用/禁用配置项。",
             "docs_url": _LLM_WIKI_DOCS_URL,
         }
         if not wiki_path.exists():

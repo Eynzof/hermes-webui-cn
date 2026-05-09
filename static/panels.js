@@ -2849,10 +2849,10 @@ function _renderSystemHealthPanel() {
     <section class="insights-card system-health-panel loading" id="systemHealthPanel" aria-label="Host resource health" aria-live="polite">
       <div class="system-health-head">
         <div>
-          <div class="insights-card-title">System health</div>
-          <div class="system-health-sub">Current VPS resource usage</div>
+          <div class="insights-card-title">${esc(t('system_health_title'))}</div>
+          <div class="system-health-sub">${esc(t('system_health_sub'))}</div>
         </div>
-        <span class="system-health-status" id="systemHealthStatus"><span class="system-health-dot" aria-hidden="true"></span>Loading…</span>
+        <span class="system-health-status" id="systemHealthStatus"><span class="system-health-dot" aria-hidden="true"></span>${esc(t('system_health_loading'))}</span>
       </div>
       <div class="system-health-metrics">
         <div class="system-health-metric" data-system-health-metric="cpu">
@@ -2868,7 +2868,7 @@ function _renderSystemHealthPanel() {
           <div class="system-health-bar" role="progressbar" aria-label="Disk usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="system-health-bar-fill"></div></div>
         </div>
       </div>
-      <div class="system-health-foot">Live snapshot only; historical resource charts can build on this surface later.</div>
+      <div class="system-health-foot">${esc(t('system_health_foot'))}</div>
     </section>`;
 }
 
@@ -2878,42 +2878,42 @@ function _renderLlmWikiStatus(d) {
   const isEmpty = status.available && status.status === 'empty';
   const isError = status.status === 'error';
   const badgeClass = isReady ? 'ok' : isError ? 'err' : isEmpty ? 'warn' : 'muted';
-  const badgeText = isReady ? 'Available' : isError ? 'Error' : isEmpty ? 'Empty' : 'Unavailable';
+  const badgeText = isReady ? t('llm_wiki_badge_available') : isError ? t('llm_wiki_badge_error') : isEmpty ? t('llm_wiki_badge_empty') : t('llm_wiki_badge_unavailable');
   const rawDocsUrl = status.docs_url || 'https://hermes-agent.nousresearch.com/docs/user-guide/skills/bundled/research/research-llm-wiki';
   // Guard against unsafe URL schemes (e.g. js: / data:) if docs_url ever
   // becomes config-driven. esc() HTML-escapes but doesn't validate URL scheme.
   const docsUrl = /^https?:\/\//i.test(rawDocsUrl) ? rawDocsUrl : '#';
   const toggleNote = status.toggle_available
-    ? 'Toggle available from configured Hermes Agent setting.'
-    : (status.toggle_reason || 'No stable LLM Wiki on/off config flag was detected, so this panel is read-only.');
+    ? t('llm_wiki_toggle_available')
+    : (status.toggle_reason || t('llm_wiki_toggle_unavailable'));
   const statusNote = isReady
-    ? 'LLM Wiki is configured and page metadata is visible without exposing wiki content.'
+    ? t('llm_wiki_status_ready')
     : isEmpty
-      ? 'LLM Wiki exists but has no entity, concept, comparison, or query pages yet.'
+      ? t('llm_wiki_status_empty')
       : isError
-        ? `Unable to inspect LLM Wiki status${status.error ? ': ' + status.error : ''}.`
-        : 'No LLM Wiki directory was found. Set WIKI_PATH or skills.config.wiki.path to enable status visibility.';
+        ? `${t('llm_wiki_status_error')}${status.error ? ': ' + status.error : ''}.`
+        : t('llm_wiki_status_missing');
   return `
     <div class="insights-card wiki-status-card" id="llmWikiStatusCard">
       <div class="wiki-status-head">
         <div>
-          <div class="insights-card-title">LLM Wiki</div>
-          <div class="wiki-status-sub">Knowledge-base observability</div>
+          <div class="insights-card-title">${esc(t('llm_wiki_title'))}</div>
+          <div class="wiki-status-sub">${esc(t('llm_wiki_sub'))}</div>
         </div>
         <span class="wiki-status-badge ${badgeClass}">${esc(badgeText)}</span>
       </div>
       <div class="wiki-status-note">${esc(statusNote)}</div>
       <div class="wiki-status-grid">
-        <div><span>Enabled</span><strong>${status.enabled ? 'Yes' : 'No'}</strong></div>
-        <div><span>Entries</span><strong>${Number(status.entry_count || 0).toLocaleString()}</strong></div>
-        <div><span>Pages</span><strong>${Number(status.page_count || 0).toLocaleString()}</strong></div>
-        <div><span>raw/ files</span><strong>${Number(status.raw_source_count || 0).toLocaleString()}</strong></div>
-        <div><span>Last updated</span><strong>${esc(_formatLlmWikiTimestamp(status.last_updated))}</strong></div>
-        <div><span>Last writer</span><strong>${esc(status.last_writer || 'Not available')}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_enabled'))}</span><strong>${esc(status.enabled ? t('llm_wiki_value_yes') : t('llm_wiki_value_no'))}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_entries'))}</span><strong>${Number(status.entry_count || 0).toLocaleString()}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_pages'))}</span><strong>${Number(status.page_count || 0).toLocaleString()}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_raw_files'))}</span><strong>${Number(status.raw_source_count || 0).toLocaleString()}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_last_updated'))}</span><strong>${esc(_formatLlmWikiTimestamp(status.last_updated))}</strong></div>
+        <div><span>${esc(t('llm_wiki_field_last_writer'))}</span><strong>${esc(status.last_writer || t('llm_wiki_value_not_available'))}</strong></div>
       </div>
       <div class="wiki-status-footer">
         <span>${esc(toggleNote)}</span>
-        <a href="${esc(docsUrl)}" target="_blank" rel="noopener noreferrer">Docs</a>
+        <a href="${esc(docsUrl)}" target="_blank" rel="noopener noreferrer">${esc(t('llm_wiki_docs_link'))}</a>
       </div>
     </div>`;
 }
