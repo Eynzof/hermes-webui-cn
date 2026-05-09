@@ -1,5 +1,15 @@
 # Hermes Web UI -- Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Session jump button locale parity** — localized the opt-in Start/End
+  session jump labels, aria labels, and Appearance setting copy for
+  ja/ru/es/de/zh/zh-Hant/pt/ko instead of leaving English fallbacks in
+  otherwise localized UIs. (`static/i18n.js`,
+  `tests/test_session_jump_buttons.py`) Closes #1938.
+
 ## [v0.51.30] — 2026-05-08 — 3-PR contributor batch (Release G: offline recovery + PWA hardening + opt-in session jump buttons + opt-in endless-scroll)
 
 ### Added (3 PRs, all from @ai-ag2026)

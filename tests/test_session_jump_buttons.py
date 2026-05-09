@@ -64,14 +64,17 @@ def test_session_jump_buttons_match_pill_layout_without_regressing_default_arrow
 
 
 def test_session_jump_buttons_are_i18n_localized_in_text_tooltip_and_aria():
-    for key in [
-        "session_jump_start",
-        "session_jump_start_label",
-        "session_jump_end",
-        "session_jump_end_label",
-        "settings_label_session_jump_buttons",
-        "settings_desc_session_jump_buttons",
-    ]:
+    english_literals = {
+        "session_jump_start": "Start",
+        "session_jump_start_label": "Jump to beginning of session",
+        "session_jump_end": "End",
+        "session_jump_end_label": "Jump to end of session",
+        "settings_label_session_jump_buttons": "Show session jump buttons",
+        "settings_desc_session_jump_buttons": "Show floating Start and End buttons while reading long session histories.",
+    }
+    for key in english_literals:
         assert I18N_JS.count(f"{key}:") >= 8, f"missing locale entries for {key}"
+    for key, value in english_literals.items():
+        assert I18N_JS.count(f"{key}: '{value}'") == 1, f"non-English locale still uses English literal for {key}"
     assert "document.querySelectorAll('[data-i18n-aria-label]')" in I18N_JS
     assert "el.setAttribute('aria-label', val)" in I18N_JS
