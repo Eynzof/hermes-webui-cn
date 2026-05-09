@@ -2014,10 +2014,10 @@ _LOGIN_LOCALE = {
 def _resolve_login_locale_key(raw_lang: str | None) -> str:
     """Resolve settings.language to a known _LOGIN_LOCALE key."""
     if not raw_lang:
-        return "en"
+        return "zh"
     lang = str(raw_lang).strip()
     if not lang:
-        return "en"
+        return "zh"
     if lang in _LOGIN_LOCALE:
         return lang
 
@@ -2040,7 +2040,7 @@ def _resolve_login_locale_key(raw_lang: str | None) -> str:
     for key in _LOGIN_LOCALE:
         if key.lower() == base:
             return key
-    return "en"
+    return "zh"
 
 # ── Login page (self-contained, no external deps) ────────────────────────────
 _LOGIN_PAGE_HTML = """<!doctype html>
@@ -2866,7 +2866,7 @@ def handle_get(handler, parsed) -> bool:
     if parsed.path == "/login":
         _settings = load_settings()
         _bn = _html.escape(_settings.get("bot_name") or "Hermes")
-        _lang = _settings.get("language", "en")
+        _lang = _settings.get("language", "zh")
         _login_strings = _LOGIN_LOCALE[
             _resolve_login_locale_key(_lang)
         ]
