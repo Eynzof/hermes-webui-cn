@@ -1679,6 +1679,12 @@ async function createKanbanTask(){
 let _kanbanTaskModalMode = 'create';   // 'create' | 'edit'
 let _kanbanTaskModalEditingId = null;  // task id when mode === 'edit'
 let _kanbanProfileNamesCache = null;   // populated lazily on first modal open
+let _kanbanProfileNamesCacheAt = 0;
+const _KANBAN_PROFILE_NAMES_CACHE_TTL_MS = 30000;
+function _invalidateKanbanProfileCache() {
+  _kanbanProfileNamesCache = null;
+  _kanbanProfileNamesCacheAt = 0;
+}
 // Status the modal *displayed* on edit-mode open.  If the user doesn't touch
 // the dropdown, we must NOT send `status` in the PATCH payload — otherwise
 // editing a task whose real status is non-editable in this dropdown
@@ -1689,9 +1695,13 @@ let _kanbanProfileNamesCache = null;   // populated lazily on first modal open
 let _kanbanTaskModalInitialDisplayedStatus = null;
 
 async function _kanbanLoadProfileNames(){
-  // Hit /api/profiles once per session and cache; refresh is cheap if needed.
+  // Hit /api/profiles once per session and cache for a short TTL.
   // Returns an array of profile names (sorted, default first if present).
-  if (Array.isArray(_kanbanProfileNamesCache)) return _kanbanProfileNamesCache;
+  const hasFreshCache = (
+    Array.isArray(_kanbanProfileNamesCache) &&
+    (Date.now() - _kanbanProfileNamesCacheAt) < _KANBAN_PROFILE_NAMES_CACHE_TTL_MS
+  );
+  if (hasFreshCache) return _kanbanProfileNamesCache;
   try {
     const data = await api('/api/profiles');
     const profiles = Array.isArray(data && data.profiles) ? data.profiles : [];
@@ -1703,9 +1713,11 @@ async function _kanbanLoadProfileNames(){
       return a.localeCompare(b);
     });
     _kanbanProfileNamesCache = names;
+    _kanbanProfileNamesCacheAt = Date.now();
     return names;
   } catch(_) {
     _kanbanProfileNamesCache = [];
+    _kanbanProfileNamesCacheAt = Date.now();
     return [];
   }
 }
@@ -4461,6 +4473,7 @@ async function saveProfileForm(){
     if (baseUrl) payload.base_url = baseUrl;
     if (apiKey) payload.api_key = apiKey;
     await api('/api/profile/create', { method: 'POST', body: JSON.stringify(payload) });
+    _invalidateKanbanProfileCache();
     _profilePreFormDetail = null;
     await loadProfilesPanel();
     showToast(t('profile_created', name));
@@ -4481,6 +4494,7 @@ async function deleteProfile(name) {
   if(!_delProf) return;
   try {
     await api('/api/profile/delete', { method: 'POST', body: JSON.stringify({ name }) });
+    _invalidateKanbanProfileCache();
     await loadProfilesPanel();
     showToast(t('profile_deleted', name));
   } catch (e) { showToast(t('delete_failed') + e.message); }

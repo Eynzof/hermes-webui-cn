@@ -769,6 +769,44 @@ def test_kanban_active_board_persisted_to_localstorage():
     assert "_kanbanSetSavedBoard" in PANELS
 
 
+def test_kanban_profile_assignee_cache_has_invalidation_path():
+    """Kanban assignee suggestions should stay aligned with profile mutations.
+
+    The cache in _kanbanLoadProfileNames() can become stale when profiles are
+    created or deleted in the same session. This adds an explicit
+    invalidation path and a short TTL so modal opens recover from same-session
+    mutations and cross-tab/CLI changes.
+    """
+    assert "_KANBAN_PROFILE_NAMES_CACHE_TTL_MS" in PANELS
+    assert "_kanbanProfileNamesCacheAt" in PANELS
+    assert "_invalidateKanbanProfileCache" in PANELS
+
+    load_start = PANELS.find("async function _kanbanLoadProfileNames(){")
+    assert load_start != -1, "Missing _kanbanLoadProfileNames() declaration"
+    load_end = PANELS.find("\n}\n\nasync function _kanbanPopulateAssigneeSelect", load_start)
+    if load_end == -1:
+        load_end = PANELS.find("\n}\n\nfunction openKanbanCreate", load_start)
+    load_body = PANELS[load_start:load_end] if load_end != -1 else PANELS[load_start:load_start + 2200]
+    assert "Date.now() - _kanbanProfileNamesCacheAt" in load_body
+    assert "_kanbanProfileNamesCacheAt = Date.now()" in load_body
+
+    save_start = PANELS.find("async function saveProfileForm(){")
+    assert save_start != -1, "Missing saveProfileForm() declaration"
+    save_end = PANELS.find("\n}\n\n// Back-compat", save_start)
+    save_body = PANELS[save_start:save_end if save_end != -1 else save_start + 2000]
+    assert "_invalidateKanbanProfileCache();" in save_body, (
+        "Profile create flow should invalidate Kanban assignee cache after success."
+    )
+
+    delete_start = PANELS.find("async function deleteProfile(name) {")
+    assert delete_start != -1, "Missing deleteProfile() declaration"
+    delete_end = PANELS.find("\n\n// ── Memory panel", delete_start)
+    delete_body = PANELS[delete_start:delete_end if delete_end != -1 else delete_start + 1300]
+    assert "_invalidateKanbanProfileCache();" in delete_body, (
+        "Profile delete flow should invalidate Kanban assignee cache after success."
+    )
+
+
 def test_kanban_archive_board_uses_showConfirmDialog():
     """Archive is destructive → must use the styled showConfirmDialog,
     not native confirm() (which can't be styled or i18n'd)."""
