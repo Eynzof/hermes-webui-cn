@@ -826,6 +826,12 @@
   .msg-body pre[class*="language-"],.msg-body pre code[class*="language-"]{background:var(--code-bg) !important;}
   /* Fix #1463: Prism YAML grammar collapses newlines inside token spans — force pre */
   .msg-body pre code.language-yaml .token{white-space:pre !important;}
+  @media(max-width:700px){
+    .msg-body pre,.preview-md pre{white-space:pre-wrap !important;overflow-x:hidden !important;overflow-wrap:anywhere !important;}
+    .msg-body pre code,.preview-md pre code{white-space:inherit !important;overflow-wrap:anywhere !important;word-break:break-word !important;}
+    .msg-body pre code .token,.preview-md pre code .token{white-space:inherit !important;overflow-wrap:anywhere !important;word-break:inherit !important;}
+    .diff-block .diff-line{white-space:pre-wrap !important;overflow-wrap:anywhere !important;word-break:break-word !important;}
+  }
   .pre-header{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 16px 8px;background:var(--input-bg);border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;}
   .pre-header::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--muted);opacity:.4;}
   .pre-header+pre{border-radius:0 0 10px 10px;border-top:none;margin-top:0;}
