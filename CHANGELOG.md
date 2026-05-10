@@ -27,6 +27,39 @@
 - `api/routes.py` (4 PRs touched it) and `api/streaming.py` (2 PRs) were the multi-PR files. All hunks at distinct anchors; stage merge clean with no conflicts.
 - Theme coherence: every PR in this batch addresses session compression, lineage, or continuation-stitching — the same conceptual surface from different angles.
 
+## [v0.51.36] — 2026-05-10 — Release L (locale + provider + cross-cutting)
+
+### Fixed
+
+- **PR #1992** by @29n — `ctl.sh` line 42 used `[[ -v ${key} ]]`, which requires bash 4.2+. macOS ships with bash 3.2 → `conditional binary operator expected` error. Replaced with `[[ -n "${!key+x}" ]]` — a portable variable-set check that works on bash 3.2+, zsh, and POSIX-compatible shells. No behavior change.
+
+- **PR #1998** by @franksong2702 — Localized `/goal` runtime status strings. Added 13 i18n keys (`goal_evaluating_progress`, `goal_working_toward`, `goal_continuing_toast`, `goal_status_*`, `goal_set/paused/resumed/cleared/no_goal`, `goal_achieved`, `goal_paused_budget_exhausted`, `goal_continuing`) across all locales; new keys reach `static/messages.js` and `static/commands.js` so the goal UI no longer hardcodes English. Closes #1933.
+
+- **PR #2000** by @qxxaa — Skill tools resolve from the wrong profile after per-request profile switch. `tools/skills_tool.py` and `tools/skill_manager_tool.py` cache `HERMES_HOME` as a module-level constant at import time. The process-wide `switch_profile()` path patches both modules via `_set_hermes_home()`, but the per-request path (`switch_profile(process_wide=False)`, introduced in #1700) only updated `os.environ['HERMES_HOME']` and skipped the module patching. Result: agents on non-default profiles always saw the root profile's skills. Fix adds the same monkeypatching to the per-request branch in `api/streaming.py`. Closes the parity gap with #1700.
+
+- **PR #2001** by @franksong2702 — `clarify.timeout` config was ignored by WebUI clarify prompts. The callback used a hardcoded `timeout = 120`. Now reads `clarify.timeout` from `api.config.get_config()` with bounded fallback (defaults to 120 on missing/invalid config), and threads `timeout_seconds` into the `api.clarify.submit_pending` payload so the frontend countdown matches the backend timeout. Regression test in `tests/test_sprint42.py`. Closes #1999.
+
+- **PR #2005** by @vikarag — Added Xiaomi as a first-class provider in the WebUI's model catalog. `hermes-agent` already registered Xiaomi (verified at `hermes_cli/models.py:782` + auth entries) but `api/config.py` was missing the corresponding `_PROVIDER_DISPLAY` / `_PROVIDER_ALIASES` / `_PROVIDER_MODELS` entries, so the provider list showed Xiaomi as `Unsupported` and the model dropdown fell back to OpenRouter. Adds `xiaomi` display name, `mimo`/`xiaomi-mimo` aliases, and 5 MiMo models (V2.5 Pro/V2.5/V2 Pro/V2 Omni/V2 Flash).
+
+### i18n
+
+- **PR #2002** by @eov128 — Refreshed Simplified Chinese (zh) translation. Two kinds of changes:
+  - Decoded `\uXXXX` escape sequences to literal CJK characters in already-translated strings (semantically identical at runtime; improves source readability and grep-ability)
+  - Translated 30+ previously-untranslated strings tagged `// TODO: translate` — covering MCP server status (`mcp_status_active`, `mcp_status_configured`, ...), MCP tools panel, session toolsets, workspace hidden files, terminal pane, and personality switch hint
+
+  **Stage 330 conflict resolution:** #1998 added new `goal_*` English keys interleaved with the `cmd_interrupt` block that #2002 was rewriting; resolved by preserving #1998's new English keys (TODO: translate) above the section while taking #2002's CJK literals for `cmd_*` / `settings_*` keys.
+
+  **Stage 330 test fix:** `tests/test_chinese_locale.py::test_chinese_locale_includes_representative_translations` was pinned to the source-encoded `\uXXXX` form for `settings_title` and `login_title`. Broadened to accept either `\uXXXX` or literal CJK (same runtime behavior). Other source-form assertions in this test were already on literal CJK.
+
+### Tests
+
+5049 → **5049 collected, 5049 passing, 0 regressions** (one PR added new tests in `test_kanban_ui_static.py` already counted in stage 329; stage 330 net is flat). Full suite 158s on Python 3.11 with `HERMES_HOME` isolation.
+
+### Notes
+
+- `api/streaming.py` was the high-collision file (4 PRs touched it: #1998 #2000 #2001 #2006-not-in-this-stage). Stage merge clean; #2000 and #2001 each added separate ~17-LOC blocks at distinct anchor points, no overlap.
+- All 6 PRs from 6 different authors except for #1998+#2001 (both @franksong2702). Disjoint themes.
+
 ## [v0.51.35] — 2026-05-10 — Release K (kanban polish + i18n DE pluralization)
 
 ### Fixed

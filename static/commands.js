@@ -639,7 +639,17 @@ async function cmdGoal(args){
       model_provider:S.session.model_provider||null,
       profile:S.activeProfile||S.session.profile||'default',
     })});
-    const msg=String((r&&r.message)||'').trim();
+    const msg = (() => {
+      const raw = String((r && r.message) || '').trim();
+      const key = String((r && r.message_key) || '').trim();
+      const args = Array.isArray(r && r.message_args) ? r.message_args : [];
+      if (raw.includes('\n')) return raw;
+      if (key && typeof t === 'function') {
+        const translated = String(t(key, ...args));
+        if (translated && translated !== key) return translated;
+      }
+      return raw;
+    })();
     if(msg){
       S.messages.push({role:'assistant',content:msg,_ts:Date.now()/1000,_goalStatus:true,_transient:true});
       renderMessages({preserveScroll:true});
@@ -649,7 +659,7 @@ async function cmdGoal(args){
     S.toolCalls=[];
     if(typeof clearLiveToolCards==='function')clearLiveToolCards();
     appendThinking();setBusy(true);
-    setComposerStatus('Working toward goal…');
+    setComposerStatus(t('goal_working_toward'));
     S.activeStreamId=r.stream_id;
     if(S.session&&S.session.session_id===activeSid){
       S.session.active_stream_id=r.stream_id;

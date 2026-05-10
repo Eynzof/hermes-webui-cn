@@ -657,6 +657,7 @@ _PROVIDER_DISPLAY = {
     "qwen": "Qwen",
     "x-ai": "xAI",
     "nvidia": "NVIDIA NIM",
+    "xiaomi": "Xiaomi",
 }
 
 # Provider alias → canonical slug.  Users configure providers using the
@@ -707,6 +708,8 @@ _PROVIDER_ALIASES = {
     "nvidia-nim": "nvidia",
     "build-nvidia": "nvidia",
     "nemotron": "nvidia",
+    "mimo": "xiaomi",
+    "xiaomi-mimo": "xiaomi",
     # Legacy alias — earlier WebUI builds wrote ``provider: local`` for unknown
     # loopback endpoints, but ``local`` is not registered in
     # ``hermes_cli.auth.PROVIDER_REGISTRY``. Routing it through ``custom``
@@ -1065,6 +1068,14 @@ _PROVIDER_MODELS = {
         {"id": "nvidia/nemotron-3-nano-30b-a3b", "label": "Nemotron 3 Nano 30B"},
         {"id": "nvidia/llama-3.3-nemotron-super-49b-v1.5", "label": "Llama 3.3 Nemotron Super 49B"},
         {"id": "qwen/qwen3-next-80b-a3b-instruct", "label": "Qwen3 Next 80B"},
+    ],
+    # Xiaomi MiMo — direct API via api.xiaomimimo.com
+    "xiaomi": [
+        {"id": "mimo-v2.5-pro",    "label": "MiMo V2.5 Pro"},
+        {"id": "mimo-v2.5",        "label": "MiMo V2.5"},
+        {"id": "mimo-v2-pro",      "label": "MiMo V2 Pro"},
+        {"id": "mimo-v2-omni",     "label": "MiMo V2 Omni"},
+        {"id": "mimo-v2-flash",    "label": "MiMo V2 Flash"},
     ],
     # xAI — prefix used in OpenRouter model IDs (x-ai/grok-4-20)
     "x-ai": [

@@ -896,17 +896,30 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
       }catch(_){}
     });
 
+    function _resolveGoalMessage(d){
+      const key=String(d && d.message_key ? d.message_key : '').trim();
+      const args=Array.isArray(d && d.message_args) ? d.message_args : [];
+      const raw=String(d&&d.message||'').trim();
+      if(key && typeof t==='function'){
+        try{
+          const translated=String(t(key,...args));
+          if(translated && translated!==key)return translated;
+        }catch(_){}
+      }
+      return raw;
+    }
+
     source.addEventListener('goal',e=>{
       try{
         const d=JSON.parse(e.data||'{}');
         if((d.session_id||activeSid)!==activeSid) return;
         const goalState=String(d.state||'').trim();
-        const goalEvaluatingMessage='Evaluating goal progress…';
+        const goalEvaluatingMessage=t('goal_evaluating_progress');
         if(goalState==='evaluating'){
           setComposerStatus(goalEvaluatingMessage);
           return;
         }
-        const msg=String(d.message||'').trim();
+        const msg=_resolveGoalMessage(d);
         if(!msg)return;
         _latestGoalStatus={message:msg,decision:d.decision||null,state:goalState||null};
         setComposerStatus(msg);
@@ -927,7 +940,9 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           model_provider:S.session&&S.session.model_provider||null,
           profile:S.activeProfile||'default',
         };
-        showToast('Continuing toward goal…',2200);
+        const toast=t('goal_continuing_toast');
+        const cmsg=_resolveGoalMessage(d);
+        showToast((toast&&cmsg&&cmsg!==toast)?cmsg.split('\n')[0]:toast,2200);
       }catch(_){}
     });
 

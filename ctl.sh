@@ -39,7 +39,7 @@ _load_repo_dotenv_preserving_env() {
     key="${key#export }"
     key="${key//[[:space:]]/}"
     [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    if [[ -v ${key} ]]; then
+    if [[ -n "${!key+x}" ]]; then
       value="${!key}"
       preserved+=("${key}=${value}")
     fi
@@ -215,7 +215,7 @@ start_cmd() {
   : >> "${LOG_FILE}"
   (
     cd "${REPO_ROOT}"
-    exec "${python_exe}" "${REPO_ROOT}/bootstrap.py" --no-browser --foreground --host "${CTL_HOST}" "${CTL_PORT}" "${CTL_BOOTSTRAP_ARGS[@]}"
+    exec "${python_exe}" "${REPO_ROOT}/bootstrap.py" --no-browser --foreground --host "${CTL_HOST}" "${CTL_PORT}" ${CTL_BOOTSTRAP_ARGS[@]+"${CTL_BOOTSTRAP_ARGS[@]}"}
   ) >> "${LOG_FILE}" 2>&1 &
   pid=$!
 
