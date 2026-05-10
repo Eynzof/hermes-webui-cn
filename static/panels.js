@@ -1771,6 +1771,7 @@ function openKanbanCreate(){
   // tasks that need human review before being marked actionable; users who
   // want it can still pick it from the status dropdown.
   _kanbanResetTaskModalFields({status: 'ready'});
+  _kanbanSetTaskModalStatusHint(null);
   _kanbanSetTaskModalLabels('create');
   _kanbanPopulateAssigneeSelect('').then(() => {
     // After the dropdown is populated, default-select the first profile (not
@@ -1817,6 +1818,7 @@ async function openKanbanEdit(taskId){
   // (the mapped 'triage' would land in the PATCH payload, and _patch_task
   // would call _set_status_direct → reclaim worker → move to triage).
   const initialDisplayedStatus = _kanbanEditableStatusFor(task.status);
+  const originalStatus = task.status || initialDisplayedStatus;
   _kanbanTaskModalInitialDisplayedStatus = initialDisplayedStatus;
   _kanbanResetTaskModalFields({
     title: task.title || '',
@@ -1828,6 +1830,7 @@ async function openKanbanEdit(taskId){
   // Populate the assignee select AFTER reset so the option exists when we
   // call sel.value = currentAssignee.
   await _kanbanPopulateAssigneeSelect(task.assignee || '');
+  _kanbanSetTaskModalStatusHint(originalStatus, initialDisplayedStatus);
   _kanbanSetTaskModalLabels('edit');
   _kanbanPopulateTenantDatalist();
   modal.hidden = false;
@@ -1879,6 +1882,19 @@ function _kanbanSetTaskModalLabels(mode){
   }
 }
 
+function _kanbanSetTaskModalStatusHint(realStatus, editableStatus){
+  const hintEl = document.getElementById('kanbanTaskModalStatusOriginalHint');
+  if (!hintEl) return;
+  if (!realStatus || realStatus === editableStatus) {
+    hintEl.hidden = true;
+    hintEl.textContent = '';
+    return;
+  }
+  const statusLabel = t(`kanban_status_${realStatus}`) || realStatus;
+  hintEl.textContent = String(t('kanban_status_original_hint')).replace('{0}', statusLabel);
+  hintEl.hidden = false;
+}
+
 function _kanbanPopulateTenantDatalist(){
   const tenants = (_kanbanBoard && Array.isArray(_kanbanBoard.tenants)) ? _kanbanBoard.tenants : [];
   const tList = document.getElementById('kanbanTaskModalTenantList');
@@ -1891,6 +1907,7 @@ function closeKanbanTaskModal(){
   _kanbanTaskModalMode = 'create';
   _kanbanTaskModalEditingId = null;
   _kanbanTaskModalInitialDisplayedStatus = null;
+  _kanbanSetTaskModalStatusHint(null, null);
   document.removeEventListener('keydown', _kanbanTaskModalKey);
 }
 

@@ -257,6 +257,10 @@ def test_kanban_edit_mode_preserves_status_when_dropdown_untouched():
         "Edit-mode status preservation requires tracking the initial displayed "
         "status so submit can detect whether the user actually changed it."
     )
+    assert 'id="kanbanTaskModalStatusOriginalHint"' in INDEX
+    assert "_kanbanSetTaskModalStatusHint" in PANELS
+    assert "kanban_status_original_hint" in I18N
+    assert ".kanban-status-original-hint" in STYLE
 
     # 2. openKanbanEdit captures the initial displayed status from the task.
     open_edit_match = re.search(
@@ -268,6 +272,8 @@ def test_kanban_edit_mode_preserves_status_when_dropdown_untouched():
         "openKanbanEdit must record the initial displayed status."
     )
     assert "_kanbanEditableStatusFor(task.status)" in open_edit_body
+    assert "_kanbanSetTaskModalStatusHint(originalStatus, initialDisplayedStatus)" in open_edit_body
+    assert "const originalStatus = task.status || initialDisplayedStatus" in open_edit_body
 
     # 3. Submit's edit branch only sends status when it differs from the
     #    initial displayed value.
@@ -292,6 +298,7 @@ def test_kanban_edit_mode_preserves_status_when_dropdown_untouched():
         "openKanbanCreate must reset the tracker to null so create-mode "
         "submits always include status in the POST payload."
     )
+    assert "_kanbanSetTaskModalStatusHint(null);" in create_body
 
     # 5. closeKanbanTaskModal clears the tracker so a stale value can't leak
     #    into the next open.
@@ -301,6 +308,7 @@ def test_kanban_edit_mode_preserves_status_when_dropdown_untouched():
     assert close_match
     close_body = close_match.group(1)
     assert "_kanbanTaskModalInitialDisplayedStatus = null" in close_body
+    assert "_kanbanSetTaskModalStatusHint(null, null);" in close_body
 
 
 def test_kanban_assignee_dropdown_uses_select_not_freetext():

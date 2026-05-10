@@ -543,6 +543,7 @@ const LOCALES = {
     kanban_title_required: 'Title is required.',
     kanban_new_task: 'New task',
     kanban_edit_task: 'Edit task',
+    kanban_status_original_hint: 'Actual status: {0}. This dialog only supports Triage/Todo/Ready edits.',
     kanban_run_dispatcher: 'Run dispatcher',
     kanban_run_dispatcher_confirm: 'This will claim Ready tasks on this board and spawn worker subprocesses (one per task, up to 8 per click). Continue?',
     kanban_assignee_profiles_label: 'Hermes profiles',
