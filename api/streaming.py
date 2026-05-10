@@ -2103,7 +2103,24 @@ def _run_agent_streaming(
         except ImportError:
             _profile_home = os.environ.get('HERMES_HOME', '')
             _profile_runtime_env = {}
-
+        
+        # Capture the resolved profile name now, while profile context is
+        # reliable. Used in the compression migration block to stamp s.profile
+        # on the continuation session. We resolve it here rather than calling
+        # get_active_profile_name() at compression time because that function
+        # reads thread-local storage (_tls.profile) set by set_request_profile()
+        # on the HTTP handler thread. The streaming thread is a separate
+        # threading.Thread and does not inherit TLS. At compression time,
+        # get_active_profile_name() would fall back to the process-global
+        # _active_profile, which may belong to a different concurrent tab.
+        _resolved_profile_name = getattr(s, 'profile', None)
+        if not _resolved_profile_name:
+            try:
+                from api.profiles import get_active_profile_name
+                _resolved_profile_name = get_active_profile_name()
+            except Exception:
+                _resolved_profile_name = None
+        
         _thread_env = _build_agent_thread_env(
             _profile_runtime_env,
             str(s.workspace),
@@ -3053,6 +3070,22 @@ def _run_agent_streaming(
                     old_path = SESSION_DIR / f'{old_sid}.json'
                     new_path = SESSION_DIR / f'{new_sid}.json'
                     s.session_id = new_sid
+                    # Carry profile identity across the compression boundary.
+                    # Without this, s.profile stays None on the continuation
+                    # session. On the next request, _run_agent_streaming calls
+                    # get_hermes_home_for_profile(getattr(s, 'profile', None))
+                    # which falls back to the default profile's HERMES_HOME.
+                    # Memory writes then land in the wrong profile's MEMORY.md.
+                    # Stamping here also ensures s.save() persists a non-null
+                    # profile field to the continuation session's JSON file,
+                    # covering the case where the session is later evicted from
+                    # SESSIONS and reconstructed from disk via Session.load().
+                    if not s.profile and _resolved_profile_name:
+                        s.profile = _resolved_profile_name
+                        logger.info(
+                            "Stamped profile=%r on continuation session %s after compression",
+                            _resolved_profile_name, new_sid,
+                        )
                     with LOCK:
                         if old_sid in SESSIONS:
                             SESSIONS[new_sid] = SESSIONS.pop(old_sid)
