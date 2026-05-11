@@ -4,11 +4,95 @@ Thin routing shell: imports Handler, delegates to api/routes.py, runs server.
 All business logic lives in api/*.
 """
 import logging
+import os
 import socket
 import sys
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# ── Test-mode network isolation ─────────────────────────────────────────────
+# When `HERMES_WEBUI_TEST_NETWORK_BLOCK=1` is set in the environment, refuse
+# outbound socket connections to anything that is not loopback / RFC1918 /
+# link-local / reserved-TLD. This catches accidental real outbound (forgotten
+# mocks, leaked credentials triggering SDK init, new code paths bypassing an
+# existing mock) so the test suite stays hermetic and fast.
+#
+# tests/conftest.py sets this env var on every test_server subprocess so the
+# server.py-side network isolation matches the pytest-process-side isolation
+# already installed there.
+#
+# A test that legitimately needs real outbound spawns the server with the env
+# var unset (no current callers — every test_server-using test should be
+# mockable).
+if os.environ.get("HERMES_WEBUI_TEST_NETWORK_BLOCK", "").strip() in ("1", "true", "yes"):
+    _REAL_CREATE_CONN = socket.create_connection
+    _REAL_SOCK_CONNECT = socket.socket.connect
+
+    def _addr_is_local(host):
+        if not isinstance(host, str):
+            return False
+        h = host.strip().lower()
+        if not h:
+            return False
+        if h in ("::1", "0:0:0:0:0:0:0:1") or h.startswith("fe80:") or h.startswith("fc") or h.startswith("fd"):
+            return True
+        if h == "localhost" or h.endswith(".localhost"):
+            return True
+        if h.endswith(".local") or h.endswith(".test") or h.endswith(".invalid"):
+            return True
+        if h == "example.com" or h.endswith(".example.com"):
+            return True
+        if h == "example.net" or h.endswith(".example.net"):
+            return True
+        if h == "example.org" or h.endswith(".example.org"):
+            return True
+        if h.endswith(".example"):
+            return True
+        if h and h[0].isdigit() and h.count(".") == 3:
+            try:
+                o1, o2, o3, o4 = [int(p) for p in h.split(".")]
+            except ValueError:
+                return False
+            if o1 == 127:
+                return True
+            if o1 == 10:
+                return True
+            if o1 == 192 and o2 == 168:
+                return True
+            if o1 == 172 and 16 <= o2 <= 31:
+                return True
+            if o1 == 169 and o2 == 254:
+                return True
+            if o1 == 203 and o2 == 0 and o3 == 113:
+                return True
+        return False
+
+    def _blocked_create_connection(address, *a, **kw):
+        try:
+            host = address[0]
+        except (TypeError, IndexError):
+            host = ""
+        if _addr_is_local(host):
+            return _REAL_CREATE_CONN(address, *a, **kw)
+        raise OSError(
+            f"hermes test network isolation (server.py): outbound to {address!r} blocked"
+        )
+
+    def _blocked_socket_connect(self, address):
+        try:
+            host = address[0]
+        except (TypeError, IndexError):
+            host = ""
+        if _addr_is_local(host):
+            return _REAL_SOCK_CONNECT(self, address)
+        raise OSError(
+            f"hermes test network isolation (server.py): socket.connect to {address!r} blocked"
+        )
+
+    socket.create_connection = _blocked_create_connection
+    socket.socket.connect = _blocked_socket_connect
+
 
 try:
     import resource

@@ -171,6 +171,138 @@ def pytest_configure(config):
 # imports trigger botocore initialisation.
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 
+# ── Hermetic network isolation ─────────────────────────────────────────────
+# Tests must not reach the public internet. Outbound to Anthropic / OpenAI /
+# Amazon / OpenRouter / etc. is forbidden by default. The test suite already
+# mocks every legitimate outbound (probe_provider_endpoint, get_available_models,
+# urlopen calls inside api/config.py), so a real outbound socket is either a
+# missing mock, a leaked credential triggering an SDK init, or an unintended
+# regression like the one PR #1970 introduced where a new code path bypassed
+# an existing mock and tried to hit the real LM Studio host.
+#
+# This module-level monkey-patch wraps socket.create_connection so any
+# non-loopback / non-RFC1918 / non-link-local / non-TEST-NET destination
+# raises OSError("hermes test network isolation").  Tests that deliberately
+# attempt outbound (only test_dns_resolution_failure today) opt back in
+# explicitly via the `allow_outbound_network` fixture below.
+#
+# Allowed destinations (silent pass-through):
+#   - 127.0.0.0/8     loopback
+#   - ::1             IPv6 loopback
+#   - 192.168.0.0/16  RFC1918 private
+#   - 10.0.0.0/8      RFC1918 private
+#   - 172.16.0.0/12   RFC1918 private (16-31)
+#   - 169.254.0.0/16  link-local (covers IMDS — already separately blocked
+#                     by AWS_EC2_METADATA_DISABLED, but allowed at the socket
+#                     layer because IMDS-using tests mock the response)
+#   - 203.0.113.0/24  RFC5737 TEST-NET-3 (used as documentation IPs in tests)
+#   - hostnames `localhost`, `*.local`, `*.test`, `*.example`, `*.example.com`
+#     `*.example.net`, `*.example.org`, `*.invalid` (RFC2606/6761 reserved)
+#
+# A test that opts in via the `allow_outbound_network` fixture sees the real
+# socket.create_connection.
+import socket as _hermes_test_socket
+_REAL_CREATE_CONNECTION = _hermes_test_socket.create_connection
+_REAL_SOCKET_CONNECT = _hermes_test_socket.socket.connect
+
+_ALLOW_OUTBOUND = False  # toggled by the allow_outbound_network fixture
+
+
+def _hermes_addr_is_local(host: str) -> bool:
+    """Return True for loopback / RFC1918 / link-local / reserved-TLD hosts."""
+    if not isinstance(host, str):
+        return False
+    h = host.strip().lower()
+    if not h:
+        return False
+    # IPv6 loopback / link-local
+    if h in ('::1', '0:0:0:0:0:0:0:1') or h.startswith('fe80:') or h.startswith('fc') or h.startswith('fd'):
+        return True
+    # Hostname allow-list (RFC2606/6761 reserved TLDs + localhost)
+    if h == 'localhost' or h.endswith('.localhost'):
+        return True
+    if h.endswith('.local') or h.endswith('.test') or h.endswith('.invalid'):
+        return True
+    if h == 'example.com' or h.endswith('.example.com'):
+        return True
+    if h == 'example.net' or h.endswith('.example.net'):
+        return True
+    if h == 'example.org' or h.endswith('.example.org'):
+        return True
+    if h.endswith('.example'):
+        return True
+    # IPv4 — parse octets if it looks like a dotted quad
+    if h[0].isdigit() and h.count('.') == 3:
+        try:
+            o1, o2, o3, o4 = [int(p) for p in h.split('.')]
+        except ValueError:
+            return False
+        if o1 == 127:                          # loopback
+            return True
+        if o1 == 10:                           # RFC1918 10.0.0.0/8
+            return True
+        if o1 == 192 and o2 == 168:            # RFC1918 192.168.0.0/16
+            return True
+        if o1 == 172 and 16 <= o2 <= 31:       # RFC1918 172.16.0.0/12
+            return True
+        if o1 == 169 and o2 == 254:            # link-local 169.254.0.0/16
+            return True
+        if o1 == 203 and o2 == 0 and o3 == 113:  # RFC5737 TEST-NET-3
+            return True
+    return False
+
+
+def _hermes_blocked_create_connection(address, *a, **kw):
+    if _ALLOW_OUTBOUND:
+        return _REAL_CREATE_CONNECTION(address, *a, **kw)
+    try:
+        host = address[0]
+    except (TypeError, IndexError):
+        host = ""
+    if _hermes_addr_is_local(host):
+        return _REAL_CREATE_CONNECTION(address, *a, **kw)
+    raise OSError(
+        f"hermes test network isolation: outbound socket to {address!r} is blocked. "
+        f"Tests should mock urllib.request.urlopen / requests / socket.create_connection. "
+        f"If a test genuinely needs real outbound, request the allow_outbound_network fixture."
+    )
+
+
+def _hermes_blocked_socket_connect(self, address):
+    if _ALLOW_OUTBOUND:
+        return _REAL_SOCKET_CONNECT(self, address)
+    try:
+        host = address[0]
+    except (TypeError, IndexError):
+        host = ""
+    if _hermes_addr_is_local(host):
+        return _REAL_SOCKET_CONNECT(self, address)
+    raise OSError(
+        f"hermes test network isolation: socket.connect to {address!r} is blocked."
+    )
+
+
+_hermes_test_socket.create_connection = _hermes_blocked_create_connection
+_hermes_test_socket.socket.connect = _hermes_blocked_socket_connect
+
+
+@pytest.fixture
+def allow_outbound_network():
+    """Opt-in to real outbound network for the duration of one test.
+
+    Use sparingly. Today only `test_dns_resolution_failure` needs this —
+    it intentionally exercises a real DNS lookup on a reserved-TLD hostname
+    to verify the probe maps `socket.gaierror` to `error='dns'`.
+    """
+    global _ALLOW_OUTBOUND
+    _ALLOW_OUTBOUND = True
+    try:
+        yield
+    finally:
+        _ALLOW_OUTBOUND = False
+
+
+
 
 # ── Environment isolation for tests ────────────────────────────────────────
 # HERMES_WEBUI_SKIP_ONBOARDING is set by hosting providers (e.g. Agent37) and
@@ -365,6 +497,12 @@ def test_server():
     # at module level above for the pytest process, but make it explicit here
     # so it's never accidentally cleared by an env.update later).
     env["AWS_EC2_METADATA_DISABLED"] = "true"
+    # Activate the same network-isolation block in the test_server subprocess
+    # that conftest.py installs in the pytest process. server.py reads this
+    # env var at import time and installs an identical socket-block guard.
+    # Without this, the subprocess can make outbound requests that the
+    # pytest-side block can't see.
+    env["HERMES_WEBUI_TEST_NETWORK_BLOCK"] = "1"
     env.update({
         "HERMES_WEBUI_PORT":              str(TEST_PORT),
         "HERMES_WEBUI_HOST":              "127.0.0.1",
