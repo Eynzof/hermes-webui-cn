@@ -381,6 +381,7 @@ def read_importable_agent_session_rows(
             return []
 
         parent_expr = _optional_col('parent_session_id', session_cols)
+        session_source_expr = _optional_col('session_source', session_cols)
         ended_expr = _optional_col('ended_at', session_cols)
         end_reason_expr = _optional_col('end_reason', session_cols)
         user_id_expr = _optional_col('user_id', session_cols)
@@ -410,6 +411,7 @@ def read_importable_agent_session_rows(
             f"""
             SELECT s.id, s.title, s.model, s.message_count,
                    s.started_at, s.source,
+                   {session_source_expr},
                    {user_id_expr},
                    {chat_id_expr},
                    {chat_type_expr},
@@ -625,6 +627,7 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             session_cols = {row[1] for row in cur.fetchall()}
             if 'parent_session_id' not in session_cols or 'end_reason' not in session_cols:
                 return {}
+            session_source_expr = _optional_col('session_source', session_cols)
             # Scoped fetch via PRIMARY KEY + idx_sessions_parent rather than a
             # full table scan. The sessions table grows unbounded over time
             # (1000+ rows is normal, 10000+ for power users), and this function
@@ -658,9 +661,9 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
                     placeholders = ','.join('?' * len(chunk))
                     cur.execute(
                         f"""
-                        SELECT id, source, title, started_at, parent_session_id, ended_at, end_reason
-                        FROM sessions
-                        WHERE id IN ({placeholders})
+                        SELECT s.id, s.source, {session_source_expr}, s.title, s.started_at, s.parent_session_id, s.ended_at, s.end_reason
+                        FROM sessions s
+                        WHERE s.id IN ({placeholders})
                         """,
                         chunk,
                     )
