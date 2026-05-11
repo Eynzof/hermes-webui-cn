@@ -2,7 +2,53 @@
 
 ## [Unreleased]
 
-- Fixed duplicate assistant messages in browser chat transcripts by ignoring adjacent assistant replay duplicates during server-side result merge while preserving identical assistant text across separate user turns (#2051).
+## [v0.51.44] — 2026-05-11 — Release T (5-PR contributor batch — security + worktree sessions + LM Studio + onboarding docs + transcript dedup, plus comprehensive test-suite network isolation)
+
+### Added
+
+- **PR #2052** by @franksong2702 — `docs/onboarding.md` (181 lines) covering install path choices, safe wizard re-runs with isolated `HERMES_HOME` / `HERMES_WEBUI_STATE_DIR`, provider groups, Docker/local-server Base URL rules (the most common Discord support question — `localhost` inside a container is not the host running LM Studio or Ollama), workspace setup, password step, files written by the wizard, and issue-reporting diagnostics. README pointer added from the quick-start section and Docs list. Stale `~/.hermes/webui-mvp` → `~/.hermes/webui` correction in `.env.example` and the README env-var table (the running app uses `~/.hermes/webui` per `api/config.py:42`).
+
+- **PR #2053** by @franksong2702 — Worktree-backed session creation. `POST /api/session/new` accepts a `worktree: true` flag that calls the agent's `_setup_worktree()` helper to create an isolated git worktree at `<repo>/.worktrees/hermes-XXXX`, persists `worktree_path` / `worktree_branch` / `worktree_repo_root` / `worktree_created_at` on the WebUI `Session`, surfaces a "New conversation in worktree" action in the workspace menu, and shows a subtle sidebar worktree indicator. Empty worktree sessions stay visible in the sidebar (the empty-session filter at `api/models.py:1067/1107` exempts sessions with a `worktree_path`). Note: the underlying Hermes Agent helper may add `.worktrees/` to the repository `.gitignore` the first time a worktree is created for that repo — operators will see a small uncommitted edit to `.gitignore` after their first worktree session. Cleanup lifecycle (auto-remove on session delete/archive) is deliberately deferred to a follow-up PR — needs explicit safeguards for active streams, terminals, dirty files, and unpushed commits. Closes #1955.
+
+- **PR #1970** by @dobby-d-elf — First-class LM Studio provider support with live model discovery. A dedicated `elif pid == "lmstudio":` branch in `get_available_models()` calls `hermes_cli.provider_model_ids("lmstudio")` first, falling back to a direct GET `<base_url>/models` request when env vars (`LM_API_KEY` + `LM_BASE_URL`) haven't been injected yet — this fixes the race where the provider's `.env` isn't loaded into `os.environ` before the picker runs. Detection in `detected_providers` now also fires on `LM_API_KEY` + `LM_BASE_URL` env vars and on `cfg["providers"]["lmstudio"]` config entries. The new `_get_provider_base_url()` helper plus the change to `resolve_model_provider()` from `return bare_model, provider_hint, None` to `return bare_model, provider_hint, _get_provider_base_url(provider_hint)` lets users with `providers.<id>.base_url` in `config.yaml` flow that URL through model resolution consistently (pre-fix they had to also set it under `cfg["model"]`). The "Configured" badge code from the initial PR submission was dropped per maintainer review — see PR #1970 thread for the UX discussion.
+
+### Fixed
+
+- **PR #2048** by @Hinotoi-agent — `[security]` Session import validates `workspace` field against `resolve_trusted_workspace()`. Pre-fix, a crafted JSON import with `"workspace": "/"` was persisted as the `Session.workspace`, after which `/api/file?session_id=<sid>&path=etc/hosts` resolved against `/` and served host files. The patch routes the imported value through the same resolver every other workspace-bearing endpoint already uses (`/api/session/new`, `/api/branch`, `/api/fork`, `/api/clone`), returning 400 on `ValueError` (blocked system root) or `TypeError` (non-path workspace value like `{"not": "a path"}`). Severity is highest on `0.0.0.0`-bound / reverse-proxied / LAN-exposed deployments with password auth where `PR:L` applies — there the bug turned "authenticated session creation" into "authenticated read of any process-readable file." Default loopback-only deployments without auth were lower risk because anyone on loopback can usually read `/etc/hosts` directly. Includes 105 LOC of regression coverage in `tests/test_session_import_workspace_validation.py` and a belt-and-braces invariant test against the resolver itself.
+
+- **PR #2055** by @franksong2702 — Duplicate assistant transcript merge. `_merge_display_messages_after_agent_result()` at `api/streaming.py:1754` now skips adjacent duplicate assistant messages by merge identity (`role + content + tool_call_id + json.dumps(tool_calls, sort_keys=True)`). Some provider/result replay paths produced two copies of the same assistant bubble in the current delta, which then got persisted into `s.messages` and sent back to the browser in the `done` SSE payload, producing duplicate assistant chat bubbles. The guard is intentionally adjacent-only so two separate turns that happen to produce identical assistant text remain visible — confirmed via the new negative-path test. Closes #2051.
+
+### Fixed (maintainer review on stage-337)
+
+- **PR #1970 lmstudio regression** — the new lmstudio branch in `get_available_models()` only looked at `cfg["providers"]["lmstudio"]["base_url"]`, missing the historical config shape where users put `base_url` under `cfg["model"]` when `model.provider == lmstudio`. Three pre-existing tests in `tests/test_issue1527_lmstudio_base_url_classification.py` broke on stage-337 because of this gap. The fix enhances `_get_provider_base_url()` to fall back to `cfg["model"]["base_url"]` when `cfg["model"]["provider"]` matches the requested provider id, then routes the lmstudio branch through the helper. Belt-and-suspenders negative-case test asserts `model.base_url` does NOT leak to non-active providers (so a user with `model.provider: anthropic` + `model.base_url: <anthropic-proxy>` + `providers.openai` without base_url still gets None for openai, not the anthropic proxy URL). 6 new regression tests in `tests/test_pr1970_lmstudio_base_url_fallback.py`.
+
+- **PR #2053 × PR #2041 state.db worktree recovery silent data loss** — Opus advisor caught this during stage review. PR #2041 (v0.51.42) added state.db sidecar reconciliation that rebuilds a missing `<sid>.json` from the canonical state.db row. PR #2053 added worktree-backed sessions with new metadata fields. `_state_db_row_to_sidecar()` was hard-coding `'workspace': ''` and not propagating `worktree_path` / `worktree_branch` / `worktree_repo_root` / `worktree_created_at` / `message_count` from the row to the rebuilt sidecar. Result: a worktree-backed session that lost its JSON sidecar and got rebuilt from state.db disappeared from the sidebar (the empty-session filter at `api/models.py:1067` exempts sessions with `worktree_path`, but the rebuilt sidecar had none) and downstream tools (terminal panels, file pickers using `s.workspace`) operated on empty string. Fix: extend the `_read_state_db_missing_sidecar_rows()` SELECT to include the missing columns (each gated by `_sql_optional_col()` for older state.db schemas) and propagate them in `_state_db_row_to_sidecar()`. Three new regression tests in `tests/test_state_db_worktree_recovery.py` lock the round-trip, the non-worktree no-spurious-propagation case, and the empty-worktree-session-must-stay-visible invariant.
+
+### Test infrastructure
+
+- **Hermetic network isolation across the whole test suite.** Before this release, an accidentally-leaking outbound TLS handshake from the test_server fixture (Anthropic IPv6, Amazon, OpenRouter, observed via `ss -tnp` during stage-337 debugging) was adding 60+s of wall-time to pytest runs and creating a class of flaky failures. Two new layers now enforce no-outbound by default:
+
+  1. **Pytest process** (tests/conftest.py module-level monkey-patch on `socket.create_connection` + `socket.socket.connect`). Allowed destinations: loopback (`127.0.0.0/8`, `::1`), RFC1918 (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`), RFC5737 TEST-NET-3 (`203.0.113/24`), RFC2606 reserved TLDs (`.invalid`, `.test`, `.example`, `.local`, `localhost`). Everything else raises `OSError("hermes test network isolation")`. Tests that legitimately need real outbound opt back in via the new `allow_outbound_network` fixture (zero current callers).
+
+  2. **test_server subprocess** (server.py). `HERMES_WEBUI_TEST_NETWORK_BLOCK=1` env var (set by tests/conftest.py on every spawn) activates an identical guard at the top of server.py at import time, before any api/* module loads. The env var is unset in production, so the guard is a no-op outside the test harness. Without this, the pytest-side block didn't cover the spawned subprocess.
+
+- **`test_dns_resolution_failure` refactored** to mock `socket.getaddrinfo` raising `gaierror` instead of relying on real DNS for a `*.invalid` hostname. Hermetic now, and matches the mock-based pattern every other test in the same file uses.
+
+- **`tests/test_conftest_network_isolation.py`** with 9 adversarial tests proving (a) outbound to the exact Anthropic IPv6 + Amazon IPv4 + Google DNS destinations we observed leaking is now blocked, (b) loopback / RFC1918 / link-local / reserved-TLD destinations pass through, (c) the `allow_outbound_network` opt-in fixture works.
+
+### Tests
+
+5,166 → **5,192 collected** (+26 net new across the 4 new regression test files). All passing on Python 3.11/3.12/3.13. Full suite wall-time: 161s → **95s** (the previously-leaking outbound TLS handshakes were the long tail).
+
+### Contributors
+
+@Hinotoi-agent (×1, first contribution) · @franksong2702 (×3) · @dobby-d-elf (×1, first contribution) · @nesquena (3 maintainer review fixes)
+
+### Notes
+
+- The state.db × worktree recovery interaction (PR #2053 × PR #2041) is the second case in two releases where Opus advisor caught a real cross-PR data-loss bug that neither PR's individual test suite would have surfaced (the first was the v0.51.43 CSS breakpoint asymmetry). The pattern is worth its weight — cross-PR adversarial review with grep-grounded prompts catches what unit tests miss when the failure mode lives at the seam between two features.
+
+- LM Studio support is now first-class. Live model discovery + base URL discovery from either `providers.<id>.base_url` OR `cfg["model"]["base_url"]` (when `model.provider` matches) means users with either config shape get a populated model picker without manual `config.yaml` edits.
 
 ## [v0.51.43] — 2026-05-11 — Release S (fused community PR — desktop sidebar collapse)
 
