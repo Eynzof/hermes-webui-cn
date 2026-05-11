@@ -18,6 +18,7 @@ def _ensure_state_db(path):
         CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
             source TEXT,
+            session_source TEXT,
             title TEXT,
             model TEXT,
             started_at REAL NOT NULL,
@@ -26,19 +27,34 @@ def _ensure_state_db(path):
             ended_at REAL,
             end_reason TEXT
         );
+        CREATE TABLE messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            role TEXT,
+            content TEXT,
+            timestamp REAL
+        );
         """
     )
     return conn
 
 
-def _insert_state_row(conn, sid, *, parent=None, ended_at=None, end_reason=None, started_at=None, source="webui"):
+def _insert_state_row(conn, sid, *, parent=None, ended_at=None, end_reason=None, started_at=None, source="webui", session_source=None):
     conn.execute(
         """
         INSERT INTO sessions
-        (id, source, title, model, started_at, message_count, parent_session_id, ended_at, end_reason)
-        VALUES (?, ?, ?, 'openai/gpt-5', ?, 2, ?, ?, ?)
+        (id, source, session_source, title, model, started_at, message_count, parent_session_id, ended_at, end_reason)
+        VALUES (?, ?, ?, ?, 'openai/gpt-5', ?, 2, ?, ?, ?)
         """,
-        (sid, source, sid.replace("_", " "), started_at or time.time(), parent, ended_at, end_reason),
+        (sid, source, session_source, sid.replace("_", " "), started_at or time.time(), parent, ended_at, end_reason),
+    )
+    conn.commit()
+
+
+def _insert_message(conn, sid, *, timestamp=None, role="user"):
+    conn.execute(
+        "INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, 'hello', ?)",
+        (f"msg_{sid}_{role}", sid, role, timestamp or time.time()),
     )
     conn.commit()
 
@@ -100,6 +116,59 @@ def test_lineage_report_keeps_cross_surface_parent_out_of_hidden_segments(tmp_pa
         assert [s["session_id"] for s in report["segments"]] == ["lineage_report_webui_tip"]
         assert report["segments"][0]["role"] == "tip"
         assert report["children"] == []
+    finally:
+        conn.close()
+
+
+def test_lineage_report_keeps_explicit_forks_out_of_hidden_segments(tmp_path):
+    conn = _ensure_state_db(tmp_path / "state.db")
+    t0 = time.time() - 100
+    try:
+        _insert_state_row(conn, "lineage_report_root", started_at=t0, ended_at=t0 + 5, end_reason="compression")
+        _insert_state_row(
+            conn,
+            "lineage_report_fork",
+            parent="lineage_report_root",
+            started_at=t0 + 6,
+            session_source="fork",
+        )
+
+        report = agent_sessions.read_session_lineage_report(tmp_path / "state.db", "lineage_report_fork")
+
+        assert report["lineage_key"] == "lineage_report_fork"
+        assert report["tip_session_id"] == "lineage_report_fork"
+        assert report["total_segments"] == 1
+        assert [s["session_id"] for s in report["segments"]] == ["lineage_report_fork"]
+        assert report["segments"][0]["role"] == "tip"
+        assert report["children"] == []
+        assert report["manual_review"] is False
+    finally:
+        conn.close()
+
+
+def test_importable_agent_projection_keeps_explicit_forks_out_of_compression_lineage(tmp_path):
+    conn = _ensure_state_db(tmp_path / "state.db")
+    t0 = time.time() - 100
+    try:
+        _insert_state_row(conn, "lineage_report_root", started_at=t0, ended_at=t0 + 5, end_reason="compression")
+        _insert_state_row(
+            conn,
+            "lineage_report_fork",
+            parent="lineage_report_root",
+            started_at=t0 + 6,
+            session_source="fork",
+        )
+        _insert_message(conn, "lineage_report_fork", timestamp=t0 + 7)
+
+        rows = agent_sessions.read_importable_agent_session_rows(tmp_path / "state.db", exclude_sources=())
+
+        assert [row["id"] for row in rows] == ["lineage_report_fork"]
+        fork = rows[0]
+        assert fork.get("relationship_type") == "child_session"
+        assert fork.get("parent_session_id") == "lineage_report_root"
+        assert fork.get("_parent_lineage_root_id") == "lineage_report_root"
+        assert "_lineage_root_id" not in fork
+        assert "_compression_segment_count" not in fork
     finally:
         conn.close()
 

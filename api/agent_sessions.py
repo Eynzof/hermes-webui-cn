@@ -199,6 +199,8 @@ def _is_continuation_session(parent: dict | None, child: dict | None) -> bool:
     """
     if not parent or not child:
         return False
+    if str(child.get('session_source') or '').strip().lower() == 'fork':
+        return False
     parent_source = str(parent.get('source') or '').strip().lower()
     child_source = str(child.get('source') or '').strip().lower()
     if parent_source and child_source and parent_source != child_source:
@@ -379,6 +381,7 @@ def read_importable_agent_session_rows(
             return []
 
         parent_expr = _optional_col('parent_session_id', session_cols)
+        session_source_expr = _optional_col('session_source', session_cols)
         ended_expr = _optional_col('ended_at', session_cols)
         end_reason_expr = _optional_col('end_reason', session_cols)
         user_id_expr = _optional_col('user_id', session_cols)
@@ -408,6 +411,7 @@ def read_importable_agent_session_rows(
             f"""
             SELECT s.id, s.title, s.model, s.message_count,
                    s.started_at, s.source,
+                   {session_source_expr},
                    {user_id_expr},
                    {chat_id_expr},
                    {chat_type_expr},
@@ -496,6 +500,7 @@ def read_session_lineage_report(db_path: Path, session_id: str | None, max_hops:
                 return _empty_lineage_report(sid)
 
             source_expr = _optional_col('source', session_cols)
+            session_source_expr = _optional_col('session_source', session_cols)
             title_expr = _optional_col('title', session_cols)
             started_expr = _optional_col('started_at', session_cols, '0')
             ended_expr = _optional_col('ended_at', session_cols)
@@ -509,6 +514,7 @@ def read_session_lineage_report(db_path: Path, session_id: str | None, max_hops:
                     f"""
                     SELECT s.id,
                            {source_expr},
+                           {session_source_expr},
                            {title_expr},
                            {started_expr},
                            {parent_expr},
@@ -551,6 +557,7 @@ def read_session_lineage_report(db_path: Path, session_id: str | None, max_hops:
                     f"""
                     SELECT s.id,
                            {source_expr},
+                           {session_source_expr},
                            {title_expr},
                            {started_expr},
                            {parent_expr},
@@ -620,6 +627,7 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
             session_cols = {row[1] for row in cur.fetchall()}
             if 'parent_session_id' not in session_cols or 'end_reason' not in session_cols:
                 return {}
+            session_source_expr = _optional_col('session_source', session_cols)
             # Scoped fetch via PRIMARY KEY + idx_sessions_parent rather than a
             # full table scan. The sessions table grows unbounded over time
             # (1000+ rows is normal, 10000+ for power users), and this function
@@ -653,9 +661,9 @@ def read_session_lineage_metadata(db_path: Path, session_ids: list[str] | set[st
                     placeholders = ','.join('?' * len(chunk))
                     cur.execute(
                         f"""
-                        SELECT id, source, title, started_at, parent_session_id, ended_at, end_reason
-                        FROM sessions
-                        WHERE id IN ({placeholders})
+                        SELECT s.id, s.source, {session_source_expr}, s.title, s.started_at, s.parent_session_id, s.ended_at, s.end_reason
+                        FROM sessions s
+                        WHERE s.id IN ({placeholders})
                         """,
                         chunk,
                     )
