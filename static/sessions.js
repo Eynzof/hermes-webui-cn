@@ -231,14 +231,36 @@ function _isSessionActivelyViewedForList(sid) {
 function _isSessionLocallyStreaming(s) {
   if (!s || !s.session_id) return false;
   const isActive = S.session && s.session_id === S.session.session_id;
-  return Boolean(
-    (isActive && S.busy)
-    || (typeof INFLIGHT === 'object' && INFLIGHT && INFLIGHT[s.session_id])
-  );
+  // For the active session, rely on S.busy to indicate an ongoing stream.
+  // INFLIGHT entries for non-active sessions are artifacts of interrupted
+  // streams (page refresh, network disconnect, gateway restart) where
+  // `delete INFLIGHT[sid]` was never reached — they should NOT cause the
+  // sidebar spinner to appear on completed sessions. (#2066)
+  return isActive && Boolean(S.busy);
 }
 
 function _isSessionEffectivelyStreaming(s) {
   return Boolean(s && (s.is_streaming || _isSessionLocallyStreaming(s)));
+}
+
+function _purgeStaleInflightEntries() {
+  // Clean up INFLIGHT entries for sessions the server confirms are NOT
+  // streaming. This prevents the in-memory cache from growing unbounded
+  // when streams end abnormally. (#2066)
+  if (typeof INFLIGHT !== 'object' || !INFLIGHT) return;
+  const sessionsById = new Map();
+  if (Array.isArray(_allSessions)) {
+    for (const s of _allSessions) {
+      if (s && s.session_id) sessionsById.set(s.session_id, s);
+    }
+  }
+  for (const sid of Object.keys(INFLIGHT)) {
+    const s = sessionsById.get(sid);
+    if (s && !s.is_streaming) {
+      delete INFLIGHT[sid];
+      if (typeof clearInflightState === 'function') clearInflightState(sid);
+    }
+  }
 }
 
 function _rememberRenderedStreamingState(s, isStreaming) {
@@ -2257,6 +2279,10 @@ function renderSessionListFromCache(){
   // Don't re-render while user is actively renaming a session (would destroy the input)
   if(_renamingSid) return;
   closeSessionActionMenu();
+  // Purge stale INFLIGHT entries for sessions the server confirms are NOT
+  // streaming. This runs on every list refresh to prevent memory leaks from
+  // interrupted streams. (#2066)
+  _purgeStaleInflightEntries();
   const q=($('sessionSearch').value||'').toLowerCase();
   const activeSidForSidebar=_activeSessionIdForSidebar();
   const titleMatches=q?_allSessions.filter(s=>(s.title||'Untitled').toLowerCase().includes(q)):_allSessions;
