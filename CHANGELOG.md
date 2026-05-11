@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- **PR #2100** by @ai-ag2026 — Per-cron toast notification toggle. New `toast_notifications` boolean on cron job payloads (default-true for legacy preservation) wired through `_renderCronForm`, `_renderCronDetail`, `openCronCreate`, `openCronEdit`, `duplicateCurrentCron`, and `saveCronForm`. The polling loop in `startCronPolling()` gates `showToast(...)` on `c.toast_notifications !== false` so muted jobs still update the Tasks badge and new-run marker but skip the toast. Full i18n parity (8 locales: en/it/ja/ru/es/de/zh/pt/ko after PR #2067 lands) and 158-line regression suite in `tests/test_cron_toast_notifications.py`.
+
+- **PR #2067** by @samuelgudi — Italian (`it`) locale. ~280 UI strings translated covering boot, messages, MCP, commands, goals, settings, sessions, kanban, panels, and the offline state. Inserted alphabetically (`en → it → ja`) in `static/i18n.js`'s `LOCALES` map and mirrored in the `LOGIN_LOCALES` server-rendered table in `api/routes.py`. Updated `TestComposerVoiceButtonI18n.LOCALES` to include `"it"`; sibling `TestVoiceModePreferenceGate` also gets the tuple so its newly-adaptive `len(self.LOCALES)` count assert resolves.
+
+### Fixed
+
+- **PR #2075** by @LumenYoung — Stale `gateway_state == "running"` runtime status is now reported as `alive: null` (unknown) instead of `alive: false` (refs #1879). In multi-container WebUI+gateway deployments the older gateway builds only refresh `gateway_state.json` on lifecycle changes, not every tick — so a stale `running` file means "WebUI cannot see the gateway" rather than "gateway is down". New `_runtime_status_is_stale_running()` helper sits in front of the existing `_runtime_status_is_stale_stopped()` branch in `build_agent_health_payload()` so the heartbeat banner no longer flips to a confirmed-outage state when the gateway is actually fine but PID-checking across containers is impossible. 52 LOC including the inversion of the matching assertion in `test_issue1879_cross_container_gateway_liveness.py`.
+
+- **PR #2070** by @ai-ag2026 — CI and console-noise hygiene. (1) Quoted `"pyyaml>=6.0"` in `.github/workflows/tests.yml` install step so the shell stops parsing the unquoted `>` as stdout redirection. (2) Registered the `integration` pytest marker in a new `pytest.ini` to suppress collection-time warnings on tests that hit the live test server. (3) Lowered the live-model success diagnostic in `_fetchLiveModels()` from `console.log` to `console.debug` so model-fetch chatter no longer floods the default browser console. New `tests/test_ci_hygiene.py` (29 LOC) pins all three regressions.
+
+### Stage-340 maintainer fixes
+
+- **`tests/test_issue1488_composer_voice_buttons.py:TestVoiceModePreferenceGate`** — Defined `LOCALES = ("en", "it", "ja", "ru", "es", "de", "zh", "zh-Hant", "pt", "ko")` on the class. PR #2067 made `test_settings_pane_has_voice_mode_i18n_keys` count adaptive via `len(self.LOCALES)` but only defined `LOCALES` on the sibling `TestComposerVoiceButtonI18n`, so CI failed with `AttributeError`. Mirroring the tuple is the surgical fix; the alternative (back to a hard-coded `9`) would have rotted next time someone adds a locale. ~2 LOC.
+
+## [v0.51.46] — 2026-05-11 — Release V (5-PR contributor batch — CSP report-only + logs panel polish + plugin slash commands + turn-journal crash-safe writer + lifecycle events)
+
 ## [v0.51.46] — 2026-05-11 — Release V (5-PR contributor batch — CSP report-only + logs panel polish + plugin slash commands + turn-journal crash-safe writer + lifecycle events)
 
 ### Added

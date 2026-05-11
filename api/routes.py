@@ -460,14 +460,19 @@ def _cron_output_content_window(text: str, limit: int = _CRON_OUTPUT_CONTENT_LIM
 
 
 def _cron_job_for_api(job: dict) -> dict:
-    """Return a cron job payload with the #617 optional profile field present.
+    """Return a cron job payload with optional UI settings normalized.
 
     Legacy jobs intentionally persist without ``profile`` so they keep the
     scheduler's server-default behavior. The API still returns ``profile: None``
     so the UI can label that state explicitly instead of guessing.
+
+    ``toast_notifications`` is a WebUI preference for completion toasts. Legacy
+    jobs default to enabled so existing behavior is preserved unless a job is
+    explicitly muted.
     """
     payload = dict(job or {})
     payload.setdefault("profile", None)
+    payload["toast_notifications"] = payload.get("toast_notifications") is not False
     return payload
 
 
@@ -1939,6 +1944,15 @@ _LOGIN_LOCALE = {
     # Strings mirror static/i18n.js login_* keys for the corresponding locale.
     # See issue #1442. When adding a new locale to LOCALES in i18n.js, also add
     # the matching entry here — tests/test_login_locale_parity.py enforces this.
+    "it": {
+        "lang": "it-IT",
+        "title": "Accedi",
+        "subtitle": "Inserisci la password per continuare",
+        "placeholder": "Password",
+        "btn": "Accedi",
+        "invalid_pw": "Password non valida",
+        "conn_failed": "Connessione fallita",
+    },
     "ja": {
         "lang": "ja-JP",
         "title": "\u30b5\u30a4\u30f3\u30a4\u30f3",
@@ -6363,6 +6377,7 @@ def _handle_cron_recent(handler, parsed):
                         "name": job.get("name", "Unknown"),
                         "status": job.get("last_status", "unknown"),
                         "completed_at": ts,
+                        "toast_notifications": job.get("toast_notifications") is not False,
                     }
                 )
         return j(handler, {"completions": completions, "since": since})
@@ -7142,6 +7157,7 @@ def _handle_cron_create(handler, body):
         from cron.jobs import create_job, update_job
 
         profile = _normalize_cron_profile_value(body.get("profile"))
+        toast_notifications = body.get("toast_notifications") is not False
         job = create_job(
             prompt=body["prompt"],
             schedule=body["schedule"],
@@ -7150,8 +7166,13 @@ def _handle_cron_create(handler, body):
             skills=body.get("skills") or [],
             model=body.get("model") or None,
         )
+        post_create_updates = {}
         if profile is not None:
-            job = update_job(job["id"], {"profile": profile}) or job
+            post_create_updates["profile"] = profile
+        if not toast_notifications:
+            post_create_updates["toast_notifications"] = False
+        if post_create_updates:
+            job = update_job(job["id"], post_create_updates) or job
         return j(handler, {"ok": True, "job": _cron_job_for_api(job)})
     except Exception as e:
         return j(handler, {"error": str(e)}, status=400)
