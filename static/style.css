@@ -1314,9 +1314,15 @@
   @media(min-width:901px){
     html[data-workspace-panel="closed"] .rightpanel{width:0 !important;opacity:0;transform:translateX(14px);border-left-color:transparent;pointer-events:none;}
     .layout.workspace-panel-collapsed .rightpanel{width:0 !important;opacity:0;transform:translateX(14px);border-left-color:transparent;pointer-events:none;}
-    /* Sidebar collapse — same shape as workspace panel collapse, mirrored on the left.
-       :not(.mobile-open) so the mobile slide-in overlay (handled in the max-width:640px
-       block above) is never targeted by these rules. */
+  }
+
+  /* Sidebar collapse breakpoint matches `_isDesktopWidth()` (min-width:641px) so
+     clicking the active rail icon in the tablet-portrait band (641–900px) actually
+     produces a visual change rather than silently flipping a class while CSS sits
+     out at @901. The rail itself becomes visible at min-width:641px, so any width
+     where the user can click the rail should also be a width where the collapse
+     rule applies. :not(.mobile-open) excludes the slide-in overlay below 641px. */
+  @media(min-width:641px){
     .layout.sidebar-collapsed .sidebar:not(.mobile-open){width:0 !important;min-width:0;opacity:0;transform:translateX(-14px);border-right-color:transparent;pointer-events:none;overflow:hidden;}
     .layout.sidebar-collapsed .sidebar .resize-handle{display:none;}
     /* Flash prevention: an inline <script> in index.html sets this dataset on

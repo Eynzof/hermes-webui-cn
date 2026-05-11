@@ -88,6 +88,54 @@ class TestSidebarCollapseCSS:
             assert ":not(.mobile-open)" in selector, \
                 f"Collapse selector must exclude .mobile-open: {selector!r}"
 
+    def test_css_breakpoint_matches_js_isdesktopwidth(self):
+        # The CSS @media block guarding .layout.sidebar-collapsed must use the
+        # same min-width threshold as JS _isDesktopWidth(). Otherwise a click
+        # in the asymmetric band silently flips the class while CSS sits out
+        # — confusing for the user, broken for screen readers.
+        js_bp = re.search(
+            r"function\s+_isDesktopWidth[^}]*?matchMedia\('([^']+)'\)",
+            BOOT_JS, re.DOTALL,
+        )
+        assert js_bp, "Could not locate _isDesktopWidth matchMedia query in boot.js"
+        js_query = js_bp.group(1)
+
+        # Walk CSS to find which @media block encloses .layout.sidebar-collapsed
+        idx = CSS.index(".layout.sidebar-collapsed .sidebar:not(.mobile-open)")
+        # Search backward for the most recent unmatched `@media(...)`
+        prefix = CSS[:idx]
+        depth = 0
+        media_stack = []
+        last_open_media = None
+        i = 0
+        while i < len(prefix):
+            ch = prefix[i]
+            if ch == "@" and prefix[i:i + 6] == "@media":
+                end = prefix.index("{", i)
+                cond = prefix[i + 6:end].strip()
+                media_stack.append((cond, depth + 1))
+                i = end + 1
+                depth += 1
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                while media_stack and media_stack[-1][1] > depth:
+                    media_stack.pop()
+            i += 1
+        last_open_media = media_stack[-1][0] if media_stack else None
+        assert last_open_media is not None, (
+            "Collapse rule must be inside an @media block to gate it correctly"
+        )
+        # Normalise whitespace for comparison
+        norm = lambda s: s.replace(" ", "")
+        assert norm(last_open_media) == norm(js_query), (
+            f"CSS @media('{last_open_media}') for .sidebar-collapsed must match JS "
+            f"_isDesktopWidth() ('{js_query}'). Otherwise clicks in the asymmetric band "
+            f"silently flip state without visual feedback."
+        )
+
 
 # ── boot.js contract ───────────────────────────────────────────────────────
 
