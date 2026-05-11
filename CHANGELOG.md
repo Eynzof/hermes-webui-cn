@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.51.45] — 2026-05-11 — Release U (9-PR contributor batch — themes docs + gitignore policy + kanban parity + skill cache patching + fork lineage + sidebar spinner + custom provider slug + session recovery polish + compression anchor refactor)
+
 ### Added
 
 - **PR #2074** by @franksong2702 — `_patch_skill_home_modules(home)` centralizes patching of both `tools.skills_tool` and `tools.skill_manager_tool` module-level skill paths so process-wide HERMES_HOME switches and per-request streaming switches stay aligned. Closes #2023. Closes the cleanup gap from the original #2023 fix where the streaming per-request path patched both modules but the process-wide switch path only patched `tools.skills_tool`. Preserves the no-import-under-`_ENV_LOCK` invariant from #2024.
@@ -31,6 +33,10 @@
 ### Tests
 
 - **PR #2076** by @franksong2702 — `test_kanban_locale_parity` (added to `tests/test_kanban_ui_static.py`) catches missing-key regressions across ~86 `kanban_*` i18n keys × 9 locales (en, ja, ru, es, de, zh, zh-Hant, pt, ko). Follows the existing `test_lineage_segment_locale_keys_are_defined_for_sidebar_locales` pattern. Issue #1973 flagged that this regression class was previously caught only by manual review during the Opus pre-ship audit.
+
+### Stage-338 maintainer review (Opus advisor)
+
+- **`api/providers.py:1049`** — Custom provider entries that slugify to an empty string were silently dropped, which made misconfigurations hard to diagnose. `logger.warning()` now surfaces the bad config entry. ~4 LOC; pure observability change.
 
 
 ## [v0.51.44] — 2026-05-11 — Release T (5-PR contributor batch — security + worktree sessions + LM Studio + onboarding docs + transcript dedup, plus comprehensive test-suite network isolation)
