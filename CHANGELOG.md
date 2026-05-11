@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Added worktree-backed conversation creation for development sessions: the workspace menu can now create a new conversation in a Hermes Agent git worktree, persist the worktree path/branch/repo metadata on the session, and show a sidebar worktree indicator without adding automatic cleanup yet (#1955).
+- Added worktree-backed conversation creation for development sessions: the workspace menu can now create a new conversation in a Hermes Agent git worktree, persist the worktree path/branch/repo metadata on the session, and show a sidebar worktree indicator without adding automatic cleanup yet. The underlying Agent helper may add `.worktrees/` to the repository `.gitignore` the first time a worktree is created for that repo (#1955).
 
 ## [v0.51.42] — 2026-05-11 — Release R (5-PR contributor batch — session recovery state.db reconciliation + RFC convention + MEDIA_ALLOWED_ROOTS + Slack cron delivery)
 
