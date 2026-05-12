@@ -16,6 +16,11 @@
 
 - **`docs/rfcs/README.md`** — Added a single bullet to the conventions block clarifying that RFCs are design directions, not invitations to file implementation PRs against fragments. Implementation slices need maintainer confirmation in the tracking issue first. Applied alongside PR #2105 to head off the speculative-fragment pattern we just had to put on hold with PR #2071 (well-written 651-LOC collector with no callers). ~6 LOC.
 
+- **`static/i18n.js:it` block** — Opus SHOULD-FIX from stage-341 review: PR #2064 was branched before stage-340 landed the `it` locale (#2067), so the 9 new `session_*worktree*` keys were missing for Italian users. Mechanical add inside the `it:` block at the parallel position to en/ja. Falls back to English silently without this fix; with this fix, Italian users see the worktree-retention reassurance copy in their locale. Parallels the stage-340 `cron_toast_notifications_*` fix exactly. ~9 LOC.
+
+- **`api/streaming.py` short-circuit observability** — Opus SHOULD-FIX from stage-341 review: PR #2107's new `_title_should_skip_remaining_attempts` short-circuit `break` was silent in both the aux and agent title-generation paths. Added a `logger.debug` call before each `break` so production logs surface why the prompt-iteration loop exited early (nesquena flagged this as non-blocking; landed as polish in the same release). Also expanded the function's docstring to document the membership criterion explicitly so future additions (`llm_safety_blocked`, `llm_oauth_quota`, etc.) have a clear inclusion test. ~16 LOC.
+
+
 ## [v0.51.47] — 2026-05-11 — Release W (4-PR contributor batch — per-cron toast toggle + Italian locale + stale-gateway agent-health fix + CI/console hygiene)
 
 ### Added

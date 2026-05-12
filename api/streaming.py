@@ -896,11 +896,21 @@ def _title_retry_status(status: str) -> bool:
 
 
 def _title_should_skip_remaining_attempts(status: str) -> bool:
-    # When a reasoning model burns its budget on hidden reasoning,
-    # additional prompts against the same model will hit the same wall.
-    # Short-circuit the prompt-iteration loop so we don't issue a second
-    # full-budget LLM call (and twice the GPU/credit burn) only to land in
-    # the same fallback path.  See issue #2083.
+    """Statuses where re-issuing the next prompt against the same model
+    produces the same failing shape (model burned its budget on hidden
+    reasoning, hit a hard provider gate, etc.).
+
+    Short-circuit the prompt-iteration loop so we don't issue a second
+    full-budget LLM call (and twice the GPU/credit burn) only to land in
+    the same fallback path. See issue #2083.
+
+    Add a status here only when retrying the next prompt is provably
+    wasted work (single-call signal already establishes that the next
+    call will return the same shape). Length-truncation WITHOUT
+    reasoning is NOT in the set — that's legitimately recoverable by
+    a larger budget on a different prompt and stays in
+    :func:`_title_retry_status`.
+    """
     return status in {
         'llm_empty_reasoning',
         'llm_empty_reasoning_aux',
@@ -1010,6 +1020,10 @@ def generate_title_raw_via_aux(
             # the next prompt against the same model produces the same shape.
             # Short-circuit to the local fallback path (#2083).
             if _title_should_skip_remaining_attempts(last_status):
+                logger.debug(
+                    "Aux title generation short-circuiting after %s (reasoning-only response).",
+                    last_status,
+                )
                 break
         return None, last_status
     except Exception as e:
@@ -1114,6 +1128,10 @@ def generate_title_raw_via_agent(agent, user_text: str, assistant_text: str) -> 
             # the next prompt against the same model produces the same shape.
             # Short-circuit to the local fallback path (#2083).
             if _title_should_skip_remaining_attempts(last_status):
+                logger.debug(
+                    "Agent title generation short-circuiting after %s (reasoning-only response).",
+                    last_status,
+                )
                 break
         return None, last_status
     except Exception as e:
