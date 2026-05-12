@@ -42,6 +42,15 @@ git remote set-url origin https://cnb.cool/hermesagent-cn/hermes-webui-cn-mirror
 
 切换后 `git fetch origin` 与 WebUI 设置面板里的"检查更新"按钮都会改走 cnb 镜像。cnb 镜像每 6 小时从 GitHub 自动同步一次，落后窗口最多 6h。
 
+### ⚠️ 一次性升级提醒（2026-05-12 之前 clone 的老用户）
+
+2026-05-12 对 `main` 历史做过一次 rebase 整理（P-001 ~ P-011 重新 base 到新上游基线），并 force-push 到 `origin/main`。结果是：老用户本地 HEAD 已不在远端历史里，**普通的"立即更新"无法 fast-forward**。
+
+- **症状**：WebUI 设置 → 检查更新 → 点"立即更新"，提示 `not possible to fast-forward` / `diverged`
+- **解决**：失败提示下方会出现 **"Force update"** 按钮，点一次即可（内部执行 `git reset --hard origin/main`）
+- **注意**：`reset --hard` 会丢弃未提交的本地改动，如有自定义请先备份
+- 之后所有更新会恢复正常的 fast-forward，无需再次强制
+
 ## 反馈
 
 - 上游 bug / 通用功能问题 → 直接给 [`nesquena/hermes-webui`](https://github.com/nesquena/hermes-webui/issues) 提
